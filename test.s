@@ -10,4 +10,4 @@ main:
 	ret
 	.data
 .LC0:
-	.string "hello, worldsdjfksdj\n"
+	.string "1\n"
