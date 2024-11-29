@@ -1,0 +1,16 @@
+# dune build minipython.exe
+# OCAMLPARAM: unset
+# Shared cache: disabled
+# Shared cache location: /home/martin/.cache/dune/db
+# Workspace root: /mnt/n/data/compiler/Project/mini-python-ocaml
+# Auto-detected concurrency: 16
+# Dune context:
+#  { name = "default"
+#  ; kind = "default"
+#  ; profile = Dev
+#  ; merlin = true
+#  ; fdo_target_exe = None
+#  ; build_dir = In_build_dir "default"
+#  ; instrument_with = []
+#  }
+$ /usr/bin/ocamlc.opt -config > /tmp/dune_c06888_output
