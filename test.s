@@ -6,6 +6,11 @@ main:
 	movq $.LC0, %rdi
 	movq $0, %rax
 	call printf
+	movq $2, %rax
+	movq $.LCd, %rdi
+	movq %rax, %rsi
+	movq $0, %rax
+	call printf
 	movq $8, %rax
 	pushq %rax
 	movq $2, %rax
@@ -109,7 +114,7 @@ main:
 	movq $.LC642448509, %rdi
 	movq %rax, -32(%rbp)
 	movq -32(%rbp), %rax
-	movq $.LCd, %rdi
+	movq $.LCd, %rdx
 	movq %rax, %rsi
 	movq $0, %rax
 	call printf
@@ -121,4 +126,4 @@ main:
 .LCd:
 	.string "%d\n"
 .LC642448509:
-	.string "testing"
+	.string "testing\n"

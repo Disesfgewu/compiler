@@ -1,4 +1,5 @@
 print( "hello world!" )
+print( 2 )
 print( 2 + 8 )
 print( 2 - 8 )
 print( 8 // 2 )

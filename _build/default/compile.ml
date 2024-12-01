@@ -56,7 +56,7 @@ let rec generate_expr expr =
       let label_name = ".LC" ^ string_of_int (Hashtbl.hash s) in
       if not (Hashtbl.mem string_table label_name) then
         Hashtbl.add string_table label_name s;
-      let data = label label_name ++ string s in
+      let data = label label_name ++ string ( s ^ "\n" ) in
       let code = movq (ilab label_name) (reg rdi) in
       (data, code)
   | TEvar var ->
@@ -96,29 +96,36 @@ let rec generate_stmt stmt =
     in
     (data, code)
   | TSprint expr ->
-      let data_expr, code_expr = generate_expr expr in
-      let format_label =
-        match expr with
-        | TEcst (Cstring _) -> ".LCs"
-        | _ -> ".LCd"
-      in
-      let format_data =
-        if Hashtbl.mem string_table format_label then
-          nop
-        else
-          let fmt = if format_label = ".LCs" then "%s\n" else "%d\n" in
-          Hashtbl.add string_table format_label fmt;
-          label format_label ++ string fmt
-      in
-      let print_code =
-        movq (ilab format_label) (reg rdi) ++
-        (match expr with
-         | TEcst (Cstring _) -> nop
-         | _ -> movq (reg rax) (reg rsi)) ++
-        movq (imm 0) (reg rax) ++
-        call "printf"
-      in
-      (data_expr ++ format_data, code_expr ++ print_code)
+    let data_expr, code_expr = generate_expr expr in
+    (* 根据表达式类型确定格式化字符串标签 *)
+    let format_label =
+      match expr with
+      | TEcst (Cstring _) -> ".LCs"  (* 对字符串使用 %s\n *)
+      | _ -> ".LCd"                 (* 对整数使用 %d\n *)
+    in
+    (* 生成格式化字符串数据段 *)
+    let format_data =
+      if Hashtbl.mem string_table format_label then
+        nop
+      else
+        let fmt = if format_label = ".LCs" then "%s\n" else "%d\n" in
+        Hashtbl.add string_table format_label fmt;
+        label format_label ++ string fmt
+    in
+    let load_format_string =
+      match expr with
+      | TEcst (Cstring _) | TEvar _ -> movq (ilab format_label) (reg rdx)  (* 字符串到 rdx *)
+      | _ -> movq (ilab format_label) (reg rdi)                          (* 其他类型到 rdi *)
+    in
+    let print_code =
+      load_format_string ++                           (* 加载格式化字符串地址 *)
+      (match expr with
+       | TEcst (Cstring _) | TEvar _ -> movq (reg rax) (reg rsi)  (* 字符串地址到 rsi *)
+       | _ -> movq (reg rax) (reg rsi)) ++                      (* 加载值到 rsi *)
+      movq (imm 0) (reg rax) ++                                (* 清空 rax *)
+      call "printf"
+    in
+    (data_expr ++ format_data, code_expr ++ print_code)
   | TSassign (var, expr) ->
       let data, code = generate_expr expr in
       let assign_code = movq (reg rax) (ind ~ofs:var.v_ofs rbp) in
