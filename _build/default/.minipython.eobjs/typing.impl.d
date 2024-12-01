@@ -1,1 +1,1 @@
-typing.ml: Ast Format Lexing List
+typing.ml: Ast Format Hashtbl Lexing List
