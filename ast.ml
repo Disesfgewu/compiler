@@ -54,8 +54,15 @@ and file = def list * stmt
 
 (** In the typed trees, all the occurrences of the same variable
    point to a single record of the following type. *)
+type v_type = 
+  | Tint
+  | Tbool
+  | Tstring
+  | Tnone
+
 type var = {
   v_name: string;
+  v_type: v_type;
   mutable v_ofs: int; (** position wrt %rbp *)
 }
 

@@ -40,14 +40,25 @@ let rec check_stmt (s : stmt) : tstmt =
   | Sassign (id, expr) ->
       (* 類型檢查右值表達式 *)
       let texpr = check_expr expr in
+      (* 獲取右值的類型 *)
+      let expr_type =
+        match texpr with
+        | TEcst (Cint _) -> Tint
+        | TEcst (Cbool _) -> Tbool
+        | TEcst (Cstring _) -> Tstring
+        | _ -> Tnone
+      in
       (* 檢查變量是否已存在符號表中 *)
       let var =
         if Hashtbl.mem symbol_table id.id then
-          (* 如果變量已存在，直接使用 *)
-          Hashtbl.find symbol_table id.id
+          (* 如果變量已存在，檢查類型是否一致 *)
+          let existing_var = Hashtbl.find symbol_table id.id in
+          if existing_var.v_type <> expr_type then
+            error ~loc:id.loc "Type mismatch for variable: %s" id.id;
+          existing_var
         else
           (* 如果變量不存在，則創建新變量並分配偏移量 *)
-          let new_var = { v_name = id.id; v_ofs = !current_offset } in
+          let new_var = { v_name = id.id; v_ofs = !current_offset; v_type = expr_type } in
           Hashtbl.add symbol_table id.id new_var;
           current_offset := !current_offset - 8;  (* 每個變量占用 8 字節 *)
           new_var
@@ -67,11 +78,11 @@ let check_def (id, params, body) : tdef =
   (* 為每個參數分配偏移量 *)
   let fn_params = 
     List.mapi (fun i param ->
-      { v_name = param.id; v_ofs = 8 * (i + 2) }  (* 函數參數從 rbp+16 開始存儲 *)
+      let param_var = { v_name = param.id; v_ofs = 8 * (i + 2); v_type = Tint } in
+      Hashtbl.add symbol_table param.id param_var;
+      param_var
     ) params
   in
-  (* 將參數添加到符號表 *)
-  List.iter (fun param -> Hashtbl.add symbol_table param.v_name param) fn_params;
   (* 檢查函數體 *)
   let tbody = check_stmt body in
   (* 返回函數定義 *)

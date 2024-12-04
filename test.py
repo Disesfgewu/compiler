@@ -17,12 +17,14 @@ z = "testing"
 print(z)
 
 if 1 == 1:
-    print( "yes" )
-
-if x < y :
-    print( "yes" )
-
-if 1 == 0:
-    print( "no" )
+    print( "test for 1 == 1 correct" )
 else:
-    print( "yes")
+    print( "test for 1 == 1 fail" )
+if 8 > 2 :
+    print( "test for x < y correct" )
+else:
+    print( "test for x < y fail"  )
+if 1 == 0:
+    print( "test for 1 == 0 fail" )
+else:
+    print( "test for 1 == 0 correct")
