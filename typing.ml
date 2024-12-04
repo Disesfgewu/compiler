@@ -18,6 +18,7 @@ let rec check_expr (e : expr) : texpr =
   match e with
   | Ecst (Cstring s) -> TEcst (Cstring s)
   | Ecst (Cint i) -> TEcst (Cint i)  (* 常量直接類型化 *)
+  | Ecst (Cbool b) -> TEcst (Cbool b)
   | Eident id ->
       if Hashtbl.mem symbol_table id.id then
         TEvar (Hashtbl.find symbol_table id.id)  (* 使用符號表中變量信息 *)
@@ -52,7 +53,7 @@ let rec check_stmt (s : stmt) : tstmt =
           new_var
       in
       TSassign (var, texpr)
-  | Sif (cond, then_branch, else_branch) ->  (* 支持 if 語句 *)
+  | Sif (cond, then_branch, else_branch) -> 
       let tcond = check_expr cond in
       let tthen = check_stmt then_branch in
       let telse = check_stmt else_branch in
