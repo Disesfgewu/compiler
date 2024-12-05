@@ -100,9 +100,9 @@ let rec generate_expr expr =
         | Beq ->
             let set_rax_to_1_label = fresh_unique_label () in
             cmpq (!%rbx) (!%rax) ++
-            movq (imm 0) (!%rax) ++
-            jne set_rax_to_1_label ++
             movq (imm 1) (!%rax) ++
+            jne set_rax_to_1_label ++
+            movq (imm 0) (!%rax) ++
             label set_rax_to_1_label ++ nop
         | Bneq ->
             let set_rax_to_1_label = fresh_unique_label () in
@@ -114,16 +114,16 @@ let rec generate_expr expr =
         | Blt ->  (* a < b *)
             let set_rax_to_1_label = fresh_unique_label () in
             cmpq (!%rbx) (!%rax) ++
-            movq (imm 0) (!%rax) ++
-            jl set_rax_to_1_label ++
             movq (imm 1) (!%rax) ++
+            jl set_rax_to_1_label ++
+            movq (imm 0) (!%rax) ++
             label set_rax_to_1_label ++ nop
         | Ble ->  (* a <= b *)
             let set_rax_to_1_label = fresh_unique_label () in
             cmpq (!%rbx) (!%rax) ++
-            movq (imm 0) (!%rax) ++
-            jle set_rax_to_1_label ++
             movq (imm 1) (!%rax) ++
+            jle set_rax_to_1_label ++
+            movq (imm 0) (!%rax) ++
             label set_rax_to_1_label ++ nop
         | Bgt ->  (* a > b *)
             let set_rax_to_1_label = fresh_unique_label () in

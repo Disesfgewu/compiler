@@ -9,9 +9,14 @@ let symbol_table : (string, var) Hashtbl.t = Hashtbl.create 16
 (* 當前變量偏移量（負數，向下擴展） *)
 let current_offset = ref (-16)
 
+
+let function_table : (string, fn) Hashtbl.t = Hashtbl.create 16
+
 (* 報告錯誤 *)
 let error ?(loc=Lexing.dummy_pos, Lexing.dummy_pos) fmt =
   Format.kasprintf (fun msg -> raise (Error (loc, msg))) fmt
+
+
 
 (* 類型檢查表達式 *)
 let rec check_expr (e : expr) : texpr =
@@ -28,9 +33,12 @@ let rec check_expr (e : expr) : texpr =
       let te1 = check_expr e1 in
       let te2 = check_expr e2 in
       TEbinop (op, te1, te2)
-  | Ecall (id, args) ->  (* 函數調用 *)
-      let targs = List.map check_expr args in
-      TEcall ({ fn_name = id.id; fn_params = [] }, targs)
+  | Ecall (id, args) ->
+    if not (Hashtbl.mem function_table id.id) then
+      error ~loc:id.loc "Undefined function: %s" id.id;
+    let fn = Hashtbl.find function_table id.id in
+    let targs = List.map check_expr args in
+    TEcall (fn, targs)    
   | _ -> error "Unsupported expression"
 
 (* 類型檢查語句 *)
@@ -70,30 +78,50 @@ let rec check_stmt (s : stmt) : tstmt =
       let telse = check_stmt else_branch in
       TSif (tcond, tthen, telse)
   | Sblock stmts -> TSblock (List.map check_stmt stmts)  (* 支持代碼塊 *)
-  | Sreturn expr -> TSreturn (check_expr expr)  (* 支持 return 語句 *)
+  | Sdef (id, params, body) ->
+      (* 定義函數參數的符號表 *)
+      let fn_params = 
+        List.mapi (fun i param ->
+          let param_var = { v_name = param.id; v_ofs = 8 * (i + 2); v_type = Tint } in
+          Hashtbl.add symbol_table param.id param_var;
+          param_var
+        ) params
+      in
+      (* 檢查函數體 *)
+      let tbody = check_stmt body in
+      (* 返回類型化的函數定義 *)
+      TSdef ({ fn_name = id.id; fn_params }, tbody)
+  | Sreturn expr ->
+      let texpr = check_expr expr in
+      TSreturn texpr
   | _ -> error "Unsupported statement"
 
-(* 類型檢查函數 *)
-let check_def (id, params, body) : tdef =
-  (* 為每個參數分配偏移量 *)
-  let fn_params = 
-    List.mapi (fun i param ->
-      let param_var = { v_name = param.id; v_ofs = 8 * (i + 2); v_type = Tint } in
-      Hashtbl.add symbol_table param.id param_var;
-      param_var
-    ) params
-  in
-  (* 檢查函數體 *)
-  let tbody = check_stmt body in
-  (* 返回函數定義 *)
-  let fn = { fn_name = id.id; fn_params } in
-  (fn, tbody)
-
-(* 類型檢查文件 *)
+  let check_def (id, params, body) : tdef =
+    (* 檢查函數是否已定義 *)
+    if Hashtbl.mem function_table id.id then
+      error ~loc:id.loc "Function already defined: %s" id.id;
+  
+    (* 定義函數參數 *)
+    let fn_params =
+      List.mapi (fun i param ->
+        let param_var = { v_name = param.id; v_ofs = 8 * (i + 2); v_type = Tint } in
+        Hashtbl.add symbol_table param.id param_var;
+        param_var
+      ) params
+    in
+  
+    (* 檢查函數體 *)
+    let tbody = check_stmt body in
+  
+    (* 創建函數記錄並添加到函數符號表 *)
+    let fn = { fn_name = id.id; fn_params } in
+    Hashtbl.add function_table id.id fn;
+  
+    (fn, tbody)
 let file ~(debug: bool) (p: Ast.file) : Ast.tfile =
   if debug then print_endline "Debugging enabled: Starting type checking...";
   let defs, stmts = p in
   let tdefs = List.map check_def defs in
   let tstmts = check_stmt stmts in
   let main_fn = { fn_name = "main"; fn_params = [] } in
-  (main_fn, tstmts) :: tdefs
+  (main_fn, TSblock [tstmts]) :: tdefs

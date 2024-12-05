@@ -3,210 +3,208 @@
 main:
 	pushq %rbp
 	movq %rsp, %rbp
-	movq $.LC774705101, %rdi
-	movq %rax, %rsi
-	movq $.LCs, %rdx
-	movq $0, %rax
-	call printf
-	movq $8, %rax
-	pushq %rax
 	movq $2, %rax
-	popq %rbx
-	addq %rbx, %rax
-	movq %rax, %rsi
-	movq $.LCd, %rdi
-	movq $0, %rax
-	call printf
-	movq $8, %rax
 	pushq %rax
-	movq $2, %rax
+	movq $1, %rax
 	popq %rbx
-	subq %rbx, %rax
+	cmpq %rbx, %rax
+	movq $1, %rax
+	jl .LC0
+	movq $0, %rax
+.LC0:
 	movq %rax, %rsi
 	movq $.LCd, %rdi
 	movq $0, %rax
 	call printf
 	movq $2, %rax
 	pushq %rax
-	movq $8, %rax
+	movq $1, %rax
 	popq %rbx
-	cqto
-	idivq %rbx
+	cmpq %rbx, %rax
+	movq $1, %rax
+	jne .LC1
+	movq $0, %rax
+.LC1:
 	movq %rax, %rsi
 	movq $.LCd, %rdi
 	movq $0, %rax
 	call printf
-	movq $8, %rax
-	pushq %rax
-	movq $2, %rax
-	popq %rbx
-	imulq %rbx, %rax
-	movq %rax, %rsi
-	movq $.LCd, %rdi
-	movq $0, %rax
-	call printf
-	movq $2, %rax
-	pushq %rax
-	movq $8, %rax
-	popq %rbx
-	cqto
-	idivq %rbx
-	movq %rdx, %rax
-	movq %rax, %rsi
-	movq $.LCd, %rdi
-	movq $0, %rax
-	call printf
-	movq $2, %rax
+	movq $5, %rax
 	movq %rax, -16(%rbp)
-	movq $8, %rax
+	movq $10, %rax
 	movq %rax, -24(%rbp)
 	movq -24(%rbp), %rax
 	pushq %rax
 	movq -16(%rbp), %rax
 	popq %rbx
-	addq %rbx, %rax
-	movq %rax, %rsi
-	movq $.LCd, %rdi
-	movq $0, %rax
-	call printf
-	movq -24(%rbp), %rax
-	pushq %rax
-	movq -16(%rbp), %rax
-	popq %rbx
-	subq %rbx, %rax
-	movq %rax, %rsi
-	movq $.LCd, %rdi
-	movq $0, %rax
-	call printf
-	movq -16(%rbp), %rax
-	pushq %rax
-	movq -24(%rbp), %rax
-	popq %rbx
-	cqto
-	idivq %rbx
-	movq %rax, %rsi
-	movq $.LCd, %rdi
-	movq $0, %rax
-	call printf
-	movq -24(%rbp), %rax
-	pushq %rax
-	movq -16(%rbp), %rax
-	popq %rbx
-	imulq %rbx, %rax
-	movq %rax, %rsi
-	movq $.LCd, %rdi
-	movq $0, %rax
-	call printf
-	movq -16(%rbp), %rax
-	pushq %rax
-	movq -24(%rbp), %rax
-	popq %rbx
-	cqto
-	idivq %rbx
-	movq %rdx, %rax
-	movq %rax, %rsi
-	movq $.LCd, %rdi
-	movq $0, %rax
-	call printf
-	movq $.LC642448509, %rdi
-	movq %rax, -32(%rbp)
-	movq -32(%rbp), %rdx
-	movq %rax, %rsi
-	movq $.LCd, %rdx
-	movq $0, %rax
-	call printf
-	movq $1, %rax
-	pushq %rax
-	movq $1, %rax
-	popq %rbx
 	cmpq %rbx, %rax
-	movq $0, %rax
-	jne .LC0
 	movq $1, %rax
-.LC0:
-	cmpq $0, %rax
-	je .LC1
-	movq $.LC197962146, %rdi
-	movq %rax, %rsi
-	movq $.LCs, %rdx
+	jne .LC2
 	movq $0, %rax
-	call printf
-	jmp .LC2
-.LC1:
-	movq $.LC861657444, %rdi
-	movq %rax, %rsi
-	movq $.LCs, %rdx
-	movq $0, %rax
-	call printf
 .LC2:
-	movq $2, %rax
-	pushq %rax
-	movq $8, %rax
-	popq %rbx
-	cmpq %rbx, %rax
+	cmpq $0, %rax
+	je .LC3
+	movq $.LC1017497501, %rdi
+	movq %rax, %rsi
+	movq $.LCs, %rdx
 	movq $0, %rax
-	jg .LC3
-	movq $1, %rax
+	call printf
+	jmp .LC4
 .LC3:
-	cmpq $0, %rax
-	je .LC4
-	movq $.LC290786532, %rdi
+	movq $.LC64382845, %rdi
 	movq %rax, %rsi
 	movq $.LCs, %rdx
 	movq $0, %rax
 	call printf
-	jmp .LC5
 .LC4:
-	movq $.LC443447357, %rdi
-	movq %rax, %rsi
-	movq $.LCs, %rdx
-	movq $0, %rax
-	call printf
-.LC5:
-	movq $0, %rax
+	movq -24(%rbp), %rax
 	pushq %rax
-	movq $1, %rax
+	movq -16(%rbp), %rax
 	popq %rbx
 	cmpq %rbx, %rax
 	movq $0, %rax
-	jne .LC6
+	je .LC5
 	movq $1, %rax
-.LC6:
+.LC5:
 	cmpq $0, %rax
-	je .LC7
-	movq $.LC572471771, %rdi
+	je .LC6
+	movq $.LC211899742, %rdi
 	movq %rax, %rsi
 	movq $.LCs, %rdx
 	movq $0, %rax
 	call printf
-	jmp .LC8
+	jmp .LC7
+.LC6:
+	movq $.LC616959230, %rdi
+	movq %rax, %rsi
+	movq $.LCs, %rdx
+	movq $0, %rax
+	call printf
 .LC7:
-	movq $.LC794097650, %rdi
+	movq -24(%rbp), %rax
+	pushq %rax
+	movq -16(%rbp), %rax
+	popq %rbx
+	cmpq %rbx, %rax
+	movq $0, %rax
+	jg .LC8
+	movq $1, %rax
+.LC8:
+	cmpq $0, %rax
+	je .LC9
+	movq $.LC501853883, %rdi
 	movq %rax, %rsi
 	movq $.LCs, %rdx
 	movq $0, %rax
 	call printf
-.LC8:
+	jmp .LC10
+.LC9:
+	movq $.LC611857265, %rdi
+	movq %rax, %rsi
+	movq $.LCs, %rdx
+	movq $0, %rax
+	call printf
+.LC10:
+	movq -24(%rbp), %rax
+	pushq %rax
+	movq -16(%rbp), %rax
+	popq %rbx
+	cmpq %rbx, %rax
+	movq $1, %rax
+	jl .LC11
+	movq $0, %rax
+.LC11:
+	cmpq $0, %rax
+	je .LC12
+	movq $.LC991831047, %rdi
+	movq %rax, %rsi
+	movq $.LCs, %rdx
+	movq $0, %rax
+	call printf
+	jmp .LC13
+.LC12:
+	movq $.LC870948356, %rdi
+	movq %rax, %rsi
+	movq $.LCs, %rdx
+	movq $0, %rax
+	call printf
+.LC13:
+	movq -24(%rbp), %rax
+	pushq %rax
+	movq -16(%rbp), %rax
+	popq %rbx
+	cmpq %rbx, %rax
+	movq $0, %rax
+	jge .LC14
+	movq $1, %rax
+.LC14:
+	cmpq $0, %rax
+	je .LC15
+	movq $.LC888186753, %rdi
+	movq %rax, %rsi
+	movq $.LCs, %rdx
+	movq $0, %rax
+	call printf
+	jmp .LC16
+.LC15:
+	movq $.LC550699791, %rdi
+	movq %rax, %rsi
+	movq $.LCs, %rdx
+	movq $0, %rax
+	call printf
+.LC16:
+	movq -24(%rbp), %rax
+	pushq %rax
+	movq -16(%rbp), %rax
+	popq %rbx
+	cmpq %rbx, %rax
+	movq $1, %rax
+	jle .LC17
+	movq $0, %rax
+.LC17:
+	cmpq $0, %rax
+	je .LC18
+	movq $.LC343737688, %rdi
+	movq %rax, %rsi
+	movq $.LCs, %rdx
+	movq $0, %rax
+	call printf
+	jmp .LC19
+.LC18:
+	movq $.LC983072046, %rdi
+	movq %rax, %rsi
+	movq $.LCs, %rdx
+	movq $0, %rax
+	call printf
+.LC19:
 	leave
 	ret
 	.data
-.LC774705101:
-	.string "hello world!\n"
-.LCs:
-	.string "%s\n"
 .LCd:
 	.string "%d\n"
-.LC642448509:
-	.string "testing\n"
-.LC197962146:
-	.string "test for 1 == 1 correct\n"
-.LC861657444:
-	.string "test for 1 == 1 fail\n"
-.LC290786532:
-	.string "test for x < y correct\n"
-.LC443447357:
-	.string "test for x < y fail\n"
-.LC572471771:
-	.string "test for 1 == 0 fail\n"
-.LC794097650:
-	.string "test for 1 == 0 correct\n"
+.LC1017497501:
+	.string "a == b is True\n"
+.LCs:
+	.string "%s\n"
+.LC64382845:
+	.string "a == b is False\n"
+.LC211899742:
+	.string "a != b is True\n"
+.LC616959230:
+	.string "a != b is False\n"
+.LC501853883:
+	.string "a > b is True\n"
+.LC611857265:
+	.string "a > b is False\n"
+.LC991831047:
+	.string "a < b is True\n"
+.LC870948356:
+	.string "a < b is False\n"
+.LC888186753:
+	.string "a >= b is True\n"
+.LC550699791:
+	.string "a >= b is False\n"
+.LC343737688:
+	.string "a <= b is True\n"
+.LC983072046:
+	.string "a <= b is False\n"

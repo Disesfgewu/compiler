@@ -42,6 +42,7 @@ and stmt =
   | Sfor of ident * expr * stmt
   | Seval of expr
   | Sset of expr * expr * expr (** {[ e1[e2] = e3 ]} *)
+  | Sdef of ident * ident list * stmt
 
 and def = ident * ident list * stmt
 
@@ -92,7 +93,8 @@ type tstmt =
   | TSfor of var * texpr * tstmt
   | TSeval of texpr
   | TSset of texpr * texpr * texpr (** {[ e1[e2] = e3 ]} *)
-
+  | TSdef of fn * tstmt 
+  
 and tdef = fn * tstmt
 
 and tfile = tdef list
