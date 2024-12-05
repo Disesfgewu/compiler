@@ -97,6 +97,8 @@ let rec generate_expr expr =
         | Bmul -> imulq (!%rbx) (!%rax)
         | Bdiv -> cqto ++ idivq (!%rbx)
         | Bmod -> cqto ++ idivq (!%rbx) ++ movq (!%rdx) (!%rax)
+        | Band -> andq (!%rbx) (!%rax)
+        | Bor -> orq (!%rbx) (!%rax)
         | Beq ->
             let set_rax_to_1_label = fresh_unique_label () in
             cmpq (!%rbx) (!%rax) ++
@@ -150,32 +152,59 @@ let rec generate_stmt stmt =
   match stmt with
   | TSprint expr ->
     let data_expr, code_expr = generate_expr expr in
-    let format_label =
+    (* 判斷是否為布爾比較運算 *)
+    let is_boolean_comparison =
       match expr with
-      | TEcst (Cstring _) -> ".LCs"
-      | TEcst (Cbool _) -> ".LCbool"
-      | _ -> ".LCd"
+      | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq) as op, left, right) -> true
+      | TEcst (Cbool _) -> true
+      | _ -> false
     in
+    (* 格式化字串選擇 *)
+    let format_label =
+      if is_boolean_comparison then ".LCs"
+      else
+        match expr with
+        | TEcst (Cstring _) -> ".LCs"
+        | _ -> ".LCd"
+    in
+    (* 添加布爾值轉換邏輯 *)
+    let bool_conversion_code =
+      if is_boolean_comparison then
+        let true_label = fresh_unique_label () in
+        let end_label = fresh_unique_label () in
+        cmpq (imm 1) (!%rax) ++
+        jne true_label ++
+        movq (ilab ".LCtrue") (!%rdi) ++
+        jmp end_label ++
+        label true_label ++
+        movq (ilab ".LCfalse") (!%rdi) ++
+        label end_label
+      else nop
+    in
+    (* 確保格式化數據段存在 *)
     let format_data =
       if Hashtbl.mem string_table format_label then
         nop
       else
         let fmt = match format_label with
-          | ".LCbool" -> "%s\n"
           | ".LCs" -> "%s\n"
+          | ".LCd" -> "%d\n"
           | _ -> "%d\n"
         in
         Hashtbl.add string_table format_label fmt;
         label format_label ++ string fmt
     in
-    let load_format_string = 
-      match expr with
-      | TEcst (Cstring _) -> movq (ilab format_label) (!%rdx)
-      | TEvar var when var.v_type = Tstring -> movq (ilab format_label) (!%rdx)
-      | _ -> movq (ilab format_label) (!%rdi)     
+    (* 加載格式字串 *)
+    let load_format_string =
+      if format_label = ".LCs" then
+        movq (ilab format_label) (!%rdx)
+      else
+        movq (ilab format_label) (!%rdi)
     in
+    (* 打印代碼 *)
     let print_code =
       code_expr ++
+      bool_conversion_code ++
       movq (!%rax) (!%rsi) ++
       load_format_string ++
       movq (imm 0) (!%rax) ++
@@ -223,13 +252,35 @@ let rec generate_stmt stmt =
     if !debug then Format.printf "Unsupported statement: %a@." print_tstmt stmt;
     failwith "Unsupported statement" 
 
+(* 初始化字符串表 *)
+let initialize () =
+  Hashtbl.add string_table ".LCtrue" "True\n";
+  Hashtbl.add string_table ".LCfalse" "False\n";
+  Hashtbl.add string_table ".LCs" "%s\n";
+  Hashtbl.add string_table ".LCd" "%d\n"
+
 (* 生成主函数代码 *)
 let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
   debug := b;
+
+  (* 保證初始化字符串表 *)
+  initialize ();  (* 在這裡調用 initialize 確保初始化執行 *)
+
+  (* 從 tfile 中提取主體代碼 *)
   let data, main_code =
     let _, stmt = List.hd tfile in
     generate_stmt stmt
   in
+
+  (* 確保 .LCtrue, .LCfalse, .LCs 等標籤被正確定義在數據段 *)
+  let string_data =
+    label ".LCtrue" ++ string "True\n" ++
+    label ".LCfalse" ++ string "False\n" ++
+    label ".LCs" ++ string "%s\n" ++
+    label ".LCd" ++ string "%d\n"
+  in
+
+  (* 生成 main 函數的 text 部分 *)
   let text =
     globl "main" ++
     label "main" ++
@@ -239,4 +290,6 @@ let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
     leave ++
     ret
   in
-  { text; data }
+
+  (* 返回包含 data 和 text 的結果，並將 string_data 添加到 data 中 *)
+  { text; data = data ++ string_data }
