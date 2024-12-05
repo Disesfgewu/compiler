@@ -100,9 +100,9 @@ let rec generate_expr expr =
         | Beq ->
             let set_rax_to_1_label = fresh_unique_label () in
             cmpq (!%rbx) (!%rax) ++
-            movq (imm 1) (!%rax) ++
-            jne set_rax_to_1_label ++
             movq (imm 0) (!%rax) ++
+            jne set_rax_to_1_label ++
+            movq (imm 1) (!%rax) ++
             label set_rax_to_1_label ++ nop
         | Bneq ->
             let set_rax_to_1_label = fresh_unique_label () in
@@ -128,16 +128,16 @@ let rec generate_expr expr =
         | Bgt ->  (* a > b *)
             let set_rax_to_1_label = fresh_unique_label () in
             cmpq (!%rbx) (!%rax) ++
-            movq (imm 0) (!%rax) ++
-            jg set_rax_to_1_label ++
             movq (imm 1) (!%rax) ++
+            jg set_rax_to_1_label ++
+            movq (imm 0) (!%rax) ++
             label set_rax_to_1_label ++ nop
         | Bge ->  (* a >= b *)
             let set_rax_to_1_label = fresh_unique_label () in
             cmpq (!%rbx) (!%rax) ++
-            movq (imm 0) (!%rax) ++
-            jge set_rax_to_1_label ++
             movq (imm 1) (!%rax) ++
+            jge set_rax_to_1_label ++
+            movq (imm 0) (!%rax) ++
             label set_rax_to_1_label ++ nop
         | _ -> failwith "Unsupported operator"
 

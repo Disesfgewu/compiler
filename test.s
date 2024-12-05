@@ -21,9 +21,9 @@ main:
 	movq $1, %rax
 	popq %rbx
 	cmpq %rbx, %rax
-	movq $1, %rax
-	jne .LC1
 	movq $0, %rax
+	jne .LC1
+	movq $1, %rax
 .LC1:
 	movq %rax, %rsi
 	movq $.LCd, %rdi
@@ -38,9 +38,9 @@ main:
 	movq -16(%rbp), %rax
 	popq %rbx
 	cmpq %rbx, %rax
-	movq $1, %rax
-	jne .LC2
 	movq $0, %rax
+	jne .LC2
+	movq $1, %rax
 .LC2:
 	cmpq $0, %rax
 	je .LC3
@@ -86,9 +86,9 @@ main:
 	movq -16(%rbp), %rax
 	popq %rbx
 	cmpq %rbx, %rax
-	movq $0, %rax
-	jg .LC8
 	movq $1, %rax
+	jg .LC8
+	movq $0, %rax
 .LC8:
 	cmpq $0, %rax
 	je .LC9
@@ -134,9 +134,9 @@ main:
 	movq -16(%rbp), %rax
 	popq %rbx
 	cmpq %rbx, %rax
-	movq $0, %rax
-	jge .LC14
 	movq $1, %rax
+	jge .LC14
+	movq $0, %rax
 .LC14:
 	cmpq $0, %rax
 	je .LC15
