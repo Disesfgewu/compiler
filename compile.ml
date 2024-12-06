@@ -77,38 +77,44 @@ let rec generate_expr expr =
         movq (ind ~ofs:var.v_ofs rbp) (!%rax)
     in
     (nop, code)
-    | TEbinop (op, left, right) ->
-      let left_data, left_code = generate_expr left in
-      let right_data, right_code = generate_expr right in
-      let op_code =
-        match op with
-        | Badd -> addq (!%rbx) (!%rax)
-        | Bsub -> subq (!%rbx) (!%rax)
-        | Bmul -> imulq (!%rbx) (!%rax)
-        | Bdiv -> cqto ++ idivq (!%rbx)
-        | Bmod -> cqto ++ idivq (!%rbx) ++ movq (!%rdx) (!%rax)
-        | Beq | Bneq | Blt | Ble | Bgt | Bge ->
-            let set_rax_to_1_label = fresh_unique_label () in
-            let end_label = fresh_unique_label () in
-            cmpq (!%rbx) (!%rax) ++
-            (match op with
-             | Beq -> je set_rax_to_1_label
-             | Bneq -> jne set_rax_to_1_label
-             | Blt -> jl set_rax_to_1_label
-             | Ble -> jle set_rax_to_1_label
-             | Bgt -> jg set_rax_to_1_label
-             | Bge -> jge set_rax_to_1_label
-             | _ -> nop) ++
-            movq (imm 0) (!%rax) ++
-            jmp end_label ++
-            label set_rax_to_1_label ++
-            movq (imm 1) (!%rax) ++
-            label end_label
-        | Band -> andq (!%rbx) (!%rax)
-        | Bor -> orq (!%rbx) (!%rax)
-        | _ -> failwith "Unsupported operator"
-      in
-      (left_data ++ right_data, right_code ++ pushq (!%rax) ++ left_code ++ popq rbx ++ op_code)  | _ -> failwith "Unsupported expression"
+  | TEunop (op, expr) ->
+    let data = generate_expr expr in
+    let op_code =
+      match op with
+      | Uneg -> 
+  | TEbinop (op, left, right) ->
+    let left_data, left_code = generate_expr left in
+    let right_data, right_code = generate_expr right in
+    let op_code =
+      match op with
+      | Badd -> addq (!%rbx) (!%rax)
+      | Bsub -> subq (!%rbx) (!%rax)
+      | Bmul -> imulq (!%rbx) (!%rax)
+      | Bdiv -> cqto ++ idivq (!%rbx)
+      | Bmod -> cqto ++ idivq (!%rbx) ++ movq (!%rdx) (!%rax)
+      | Beq | Bneq | Blt | Ble | Bgt | Bge ->
+          let set_rax_to_1_label = fresh_unique_label () in
+          let end_label = fresh_unique_label () in
+          cmpq (!%rbx) (!%rax) ++
+          (match op with
+            | Beq -> je set_rax_to_1_label
+            | Bneq -> jne set_rax_to_1_label
+            | Blt -> jl set_rax_to_1_label
+            | Ble -> jle set_rax_to_1_label
+            | Bgt -> jg set_rax_to_1_label
+            | Bge -> jge set_rax_to_1_label
+            | _ -> nop) ++
+          movq (imm 0) (!%rax) ++
+          jmp end_label ++
+          label set_rax_to_1_label ++
+          movq (imm 1) (!%rax) ++
+          label end_label
+      | Band -> andq (!%rbx) (!%rax)
+      | Bor -> orq (!%rbx) (!%rax)
+      | _ -> failwith "Unsupported operator"
+    in
+    (left_data ++ right_data, right_code ++ pushq (!%rax) ++ left_code ++ popq rbx ++ op_code)  
+  | _ -> failwith "Unsupported expression"
 
 (* 生成语句的汇编代码 *)
 let rec generate_stmt stmt =
