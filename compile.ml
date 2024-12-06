@@ -64,7 +64,7 @@ let rec generate_expr expr =
       let label_name = ".LC" ^ string_of_int (Hashtbl.hash s) in
       if not (Hashtbl.mem string_table label_name) then
         Hashtbl.add string_table label_name s;
-      let data = label label_name ++ string (s ^ "\n") in
+      let data = label label_name ++ string (s) in
       let code = movq (ilab label_name) (!%rdi) in
       (data, code)
       | TEcst (Cbool b) ->
@@ -129,14 +129,14 @@ let rec generate_expr expr =
                 call "strlen" ++
                 addq (!%r10) (!%rax) ++ (* 计算总长度 *)
                 addq (imm 1) (!%rax) ++ (* 加上 '\0' 终止符 *)
-                movq (!%rax) (!%rdi) ++
+                movq (!%rax) (!%rdx) ++
                 call "malloc" ++      (* 分配内存 *)
                 movq (!%rax) (!%r12) ++ (* 保存新字符串地址 *)
                 left_code ++
-                movq (!%r12) (!%rdi) ++
+                movq (!%r12) (!%rdx) ++
                 call "strcpy" ++      (* 拷贝左字符串 *)
                 right_code ++
-                movq (!%r12) (!%rdi) ++
+                movq (!%r12) (!%rdx) ++
                 call "strcat"         (* 拼接右字符串 *)
               in
               concat_code
@@ -231,7 +231,9 @@ let rec generate_stmt stmt =
       movq (!%rax) (!%rsi) ++
       load_format_string ++
       movq (imm 0) (!%rax) ++
-      call "printf"
+      call "printf" ++
+      movq (imm 10) (!%rdi) ++  (* 10 是 '\n' 的 ASCII 值 *)
+      call "putchar"
     in
     (data_expr ++ format_data, print_code)
   | TSassign (var, expr) ->

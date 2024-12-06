@@ -1,1 +1,1 @@
-print("asd" + "foo")
+print("asd" )
