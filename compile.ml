@@ -5,6 +5,7 @@ open Ast
 let debug = ref false
 
 let string_table : (string, string) Hashtbl.t = Hashtbl.create 64
+let function_table : (string, fn) Hashtbl.t = Hashtbl.create 16
 
 let label_counter = ref 0
 
@@ -77,17 +78,69 @@ let rec generate_expr expr =
         movq (ind ~ofs:var.v_ofs rbp) (!%rax)
     in
     (nop, code)
-  | TEunop (op, expr) ->
-    let data = generate_expr expr in
-    let op_code =
-      match op with
-      | Uneg -> 
+  | TEunop (Unot, expr) ->
+      let data, code = generate_expr expr in
+      let op_code =
+        let true_label = fresh_unique_label () in
+        let end_label = fresh_unique_label () in
+        cmpq (imm 0) (!%rax) ++
+        jne true_label ++
+        movq (imm 1) (!%rax) ++
+        jmp end_label ++
+        label true_label ++
+        movq (imm 0) (!%rax) ++
+        label end_label
+      in
+      (data, code ++ op_code)
+  | TEunop (Uneg, expr) ->
+      let data, code = generate_expr expr in
+      let op_code = negq (!%rax) in
+      (data, code ++ op_code)
+  | TEcall (fn, [arg]) when fn.fn_name = "len" ->
+    let arg_data, arg_code = generate_expr arg in
+    let len_code =
+      match arg with
+      | TEcst (Cstring _) ->
+          arg_code ++
+          movq (!%rax) (!%rsi) ++  (* 將字符串地址傳遞給 strlen *)
+          call "strlen" ++        (* 調用 C 的 strlen 函數 *)
+          subq (imm 1) (!%rax)    (* 減去尾部的換行符號 *)
+      | TEcst (Cint _) ->
+          arg_code ++
+          movq (imm 1) (!%rax)    (* 整數長度固定為 1 *)
+      | _ ->
+          failwith "len() only supports string or integer types"
+    in
+    (arg_data, len_code)    
   | TEbinop (op, left, right) ->
     let left_data, left_code = generate_expr left in
     let right_data, right_code = generate_expr right in
     let op_code =
       match op with
-      | Badd -> addq (!%rbx) (!%rax)
+      | Badd ->
+        (match left, right with
+          | TEcst (Cstring _), TEcst (Cstring _) ->
+              let concat_code =
+                (* 调用 strlen 获取两个字符串长度 *)
+                left_code ++
+                call "strlen" ++
+                movq (!%rax) (!%r10) ++ (* 保存左字符串长度到 r10 *)
+                right_code ++
+                call "strlen" ++
+                addq (!%r10) (!%rax) ++ (* 计算总长度 *)
+                addq (imm 1) (!%rax) ++ (* 加上 '\0' 终止符 *)
+                movq (!%rax) (!%rdi) ++
+                call "malloc" ++      (* 分配内存 *)
+                movq (!%rax) (!%r12) ++ (* 保存新字符串地址 *)
+                left_code ++
+                movq (!%r12) (!%rdi) ++
+                call "strcpy" ++      (* 拷贝左字符串 *)
+                right_code ++
+                movq (!%r12) (!%rdi) ++
+                call "strcat"         (* 拼接右字符串 *)
+              in
+              concat_code
+          | _ -> addq (!%rbx) (!%rax) )
       | Bsub -> subq (!%rbx) (!%rax)
       | Bmul -> imulq (!%rbx) (!%rax)
       | Bdiv -> cqto ++ idivq (!%rbx)
@@ -125,6 +178,7 @@ let rec generate_stmt stmt =
     let is_boolean_comparison =
       match expr with
       | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> true
+      | TEunop (Unot, _) -> true
       | TEcst (Cbool _) -> true
       | _ -> false
     in
@@ -226,8 +280,11 @@ let initialize () =
   Hashtbl.add string_table ".LCtrue" "True\n";
   Hashtbl.add string_table ".LCfalse" "False\n";
   Hashtbl.add string_table ".LCs" "%s\n";
-  Hashtbl.add string_table ".LCd" "%d\n"
-
+  Hashtbl.add string_table ".LCd" "%d\n";
+  Hashtbl.add function_table "len" {
+    fn_name = "len";
+    fn_params = [{ v_name = "arg"; v_ofs = 16; v_type = Tstring }];
+  }
 (* 生成主函数代码 *)
 let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
   debug := b;
@@ -248,7 +305,16 @@ let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
     label ".LCs" ++ string "%s\n" ++
     label ".LCd" ++ string "%d\n"
   in
-
+  let len_code =
+    globl "len" ++
+    label "len" ++
+    pushq (!%rbp) ++
+    movq (!%rsp) (!%rbp) ++
+    movq (ind ~ofs:16 rbp) (!%rsi) ++
+    call "strlen" ++
+    leave ++
+    ret
+  in
   (* 生成 main 函數的 text 部分 *)
   let text =
     globl "main" ++
@@ -256,9 +322,10 @@ let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
     pushq (!%rbp) ++
     movq (!%rsp) (!%rbp) ++
     main_code ++
+    movq (imm 0) (!%rax) ++
     leave ++
     ret
   in
 
   (* 返回包含 data 和 text 的結果，並將 string_data 添加到 data 中 *)
-  { text; data = data ++ string_data }
+  { text = text ++ len_code; data = data ++ string_data }

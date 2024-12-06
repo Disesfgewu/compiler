@@ -113,31 +113,39 @@ let rec check_stmt (s : stmt) : tstmt =
       TSreturn texpr
   | _ -> error "Unsupported statement"
 
-  let check_def (id, params, body) : tdef =
-    (* 檢查函數是否已定義 *)
-    if Hashtbl.mem function_table id.id then
-      error ~loc:id.loc "Function already defined: %s" id.id;
-  
-    (* 定義函數參數 *)
-    let fn_params =
-      List.mapi (fun i param ->
-        let param_var = { v_name = param.id; v_ofs = 8 * (i + 2); v_type = Tint } in
-        Hashtbl.add symbol_table param.id param_var;
-        param_var
-      ) params
-    in
-  
-    (* 檢查函數體 *)
-    let tbody = check_stmt body in
-  
-    (* 創建函數記錄並添加到函數符號表 *)
-    let fn = { fn_name = id.id; fn_params } in
-    Hashtbl.add function_table id.id fn;
-  
-    (fn, tbody)
+let check_def (id, params, body) : tdef =
+  (* 檢查函數是否已定義 *)
+  if Hashtbl.mem function_table id.id then
+    error ~loc:id.loc "Function already defined: %s" id.id;
+
+  (* 定義函數參數 *)
+  let fn_params =
+    List.mapi (fun i param ->
+      let param_var = { v_name = param.id; v_ofs = 8 * (i + 2); v_type = Tint } in
+      Hashtbl.add symbol_table param.id param_var;
+      param_var
+    ) params
+  in
+
+  (* 檢查函數體 *)
+  let tbody = check_stmt body in
+
+  (* 創建函數記錄並添加到函數符號表 *)
+  let fn = { fn_name = id.id; fn_params } in
+  Hashtbl.add function_table id.id fn;
+
+  (fn, tbody)
+let initialize () =
+  (* 初始化內建函數 len *)
+  Hashtbl.add function_table "len" {
+    fn_name = "len";
+    fn_params = [{ v_name = "arg"; v_ofs = 16; v_type = Tstring }];
+  }
+
 let file ~(debug: bool) (p: Ast.file) : Ast.tfile =
   if debug then print_endline "Debugging enabled: Starting type checking...";
   let defs, stmts = p in
+  initialize ();
   let tdefs = List.map check_def defs in
   let tstmts = check_stmt stmts in
   let main_fn = { fn_name = "main"; fn_params = [] } in
