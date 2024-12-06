@@ -66,19 +66,9 @@ let rec generate_expr expr =
       let data = label label_name ++ string (s ^ "\n") in
       let code = movq (ilab label_name) (!%rdi) in
       (data, code)
-  | TEcst (Cbool b) ->
-      let label_name = if b then ".LCtrue" else ".LCfalse" in
-      let bool_str = if b then "true" else "false" in
-      let data =
-        if Hashtbl.mem string_table label_name then
-          nop
-        else
-          let bool_data = label label_name ++ string (bool_str ^ "\n") in
-          Hashtbl.add string_table label_name bool_str;
-          bool_data
-      in
-      let code = movq (ilab label_name) (!%rax) in
-      (data, code)
+      | TEcst (Cbool b) ->
+        let code = movq (imm (if b then 1 else 0)) (!%rax) in
+        (nop, code)
   | TEvar var ->
     let code =
       if var.v_type = Tstring then
@@ -87,7 +77,7 @@ let rec generate_expr expr =
         movq (ind ~ofs:var.v_ofs rbp) (!%rax)
     in
     (nop, code)
-  | TEbinop (op, left, right) ->
+    | TEbinop (op, left, right) ->
       let left_data, left_code = generate_expr left in
       let right_data, right_code = generate_expr right in
       let op_code =
@@ -97,55 +87,28 @@ let rec generate_expr expr =
         | Bmul -> imulq (!%rbx) (!%rax)
         | Bdiv -> cqto ++ idivq (!%rbx)
         | Bmod -> cqto ++ idivq (!%rbx) ++ movq (!%rdx) (!%rax)
+        | Beq | Bneq | Blt | Ble | Bgt | Bge ->
+            let set_rax_to_1_label = fresh_unique_label () in
+            let end_label = fresh_unique_label () in
+            cmpq (!%rbx) (!%rax) ++
+            (match op with
+             | Beq -> je set_rax_to_1_label
+             | Bneq -> jne set_rax_to_1_label
+             | Blt -> jl set_rax_to_1_label
+             | Ble -> jle set_rax_to_1_label
+             | Bgt -> jg set_rax_to_1_label
+             | Bge -> jge set_rax_to_1_label
+             | _ -> nop) ++
+            movq (imm 0) (!%rax) ++
+            jmp end_label ++
+            label set_rax_to_1_label ++
+            movq (imm 1) (!%rax) ++
+            label end_label
         | Band -> andq (!%rbx) (!%rax)
         | Bor -> orq (!%rbx) (!%rax)
-        | Beq ->
-            let set_rax_to_1_label = fresh_unique_label () in
-            cmpq (!%rbx) (!%rax) ++
-            movq (imm 0) (!%rax) ++
-            jne set_rax_to_1_label ++
-            movq (imm 1) (!%rax) ++
-            label set_rax_to_1_label ++ nop
-        | Bneq ->
-            let set_rax_to_1_label = fresh_unique_label () in
-            cmpq (!%rbx) (!%rax) ++
-            movq (imm 0) (!%rax) ++
-            je set_rax_to_1_label ++
-            movq (imm 1) (!%rax) ++
-            label set_rax_to_1_label ++ nop
-        | Blt ->  (* a < b *)
-            let set_rax_to_1_label = fresh_unique_label () in
-            cmpq (!%rbx) (!%rax) ++
-            movq (imm 1) (!%rax) ++
-            jl set_rax_to_1_label ++
-            movq (imm 0) (!%rax) ++
-            label set_rax_to_1_label ++ nop
-        | Ble ->  (* a <= b *)
-            let set_rax_to_1_label = fresh_unique_label () in
-            cmpq (!%rbx) (!%rax) ++
-            movq (imm 1) (!%rax) ++
-            jle set_rax_to_1_label ++
-            movq (imm 0) (!%rax) ++
-            label set_rax_to_1_label ++ nop
-        | Bgt ->  (* a > b *)
-            let set_rax_to_1_label = fresh_unique_label () in
-            cmpq (!%rbx) (!%rax) ++
-            movq (imm 1) (!%rax) ++
-            jg set_rax_to_1_label ++
-            movq (imm 0) (!%rax) ++
-            label set_rax_to_1_label ++ nop
-        | Bge ->  (* a >= b *)
-            let set_rax_to_1_label = fresh_unique_label () in
-            cmpq (!%rbx) (!%rax) ++
-            movq (imm 1) (!%rax) ++
-            jge set_rax_to_1_label ++
-            movq (imm 0) (!%rax) ++
-            label set_rax_to_1_label ++ nop
         | _ -> failwith "Unsupported operator"
-
       in
-      (left_data ++ right_data, right_code ++ pushq (!%rax) ++ left_code ++ popq rbx ++ op_code)
-  | _ -> failwith "Unsupported expression"
+      (left_data ++ right_data, right_code ++ pushq (!%rax) ++ left_code ++ popq rbx ++ op_code)  | _ -> failwith "Unsupported expression"
 
 (* 生成语句的汇编代码 *)
 let rec generate_stmt stmt =
@@ -155,7 +118,7 @@ let rec generate_stmt stmt =
     (* 判斷是否為布爾比較運算 *)
     let is_boolean_comparison =
       match expr with
-      | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq) as op, left, right) -> true
+      | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> true
       | TEcst (Cbool _) -> true
       | _ -> false
     in

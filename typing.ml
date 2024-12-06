@@ -16,6 +16,19 @@ let function_table : (string, fn) Hashtbl.t = Hashtbl.create 16
 let error ?(loc=Lexing.dummy_pos, Lexing.dummy_pos) fmt =
   Format.kasprintf (fun msg -> raise (Error (loc, msg))) fmt
 
+(* 檢查是否為布林類型 *)
+let is_bool_type (texpr : texpr) : bool =
+  match texpr with
+  | TEcst (Cbool _) -> true
+  | TEvar var when var.v_type = Tbool -> true
+  | _ -> false
+
+(* 檢查是否為整數類型 *)
+let is_int_type (texpr : texpr) : bool =
+  match texpr with
+  | TEcst (Cint _) -> true
+  | TEvar var when var.v_type = Tint -> true
+  | _ -> false
 
 
 (* 類型檢查表達式 *)
@@ -29,6 +42,10 @@ let rec check_expr (e : expr) : texpr =
         TEvar (Hashtbl.find symbol_table id.id)  (* 使用符號表中變量信息 *)
       else
         error ~loc:id.loc "Undefined variable: %s" id.id
+  | Eunop (Unot, e) -> 
+      let te = check_expr e in
+      if is_bool_type te then TEunop (Unot, te)
+      else error "not operation only supports boolean expressions"
   | Ebinop (op, e1, e2) ->  (* 二元運算符 *)
       let te1 = check_expr e1 in
       let te2 = check_expr e2 in

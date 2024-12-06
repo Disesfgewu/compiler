@@ -3,33 +3,33 @@ print(1<2)
 print(1==2)
 
 
-# print(True)
-# print(False)
-# print(True and False)
-# print(True or False)
+print(True)
+print(False)
+print(True and False)
+print(True or False)
 
 
-# print(True == False)
-# print(True != False)
-# print(True <  False)
-# print(True <= False)
-# print(True >  False)
-# print(True >= False)
+print(True == False)
+print(True != False)
+print(True <  False)
+print(True <= False)
+print(True >  False)
+print(True >= False)
 
 
 # # 瞎生的 是這樣嗎(?
 
 # # and 
-# if True and False:
-#     print("True and False is True")
-# else:
-#     print("True and False is False")  # Output: True and False is False
+if True and False:
+    print("True and False is True")
+else:
+    print("True and False is False")  # Output: True and False is False
 
-# # or
-# if True or False:
-#     print("True or False is True")  # Output: True or False is True
-# else:
-#     print("True or False is False")
+# or
+if True or False:
+    print("True or False is True")  # Output: True or False is True
+else:
+    print("True or False is False")
 
 # # not
 # if not False:
