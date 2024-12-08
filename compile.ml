@@ -103,8 +103,7 @@ let rec generate_expr expr =
       | TEcst (Cstring _) ->
           arg_code ++
           movq (!%rax) (!%rsi) ++  (* 將字符串地址傳遞給 strlen *)
-          call "strlen" ++        (* 調用 C 的 strlen 函數 *)
-          subq (imm 1) (!%rax)    (* 減去尾部的換行符號 *)
+          call "strlen"        (* 調用 C 的 strlen 函數 *)
       | TEcst (Cint _) ->
           arg_code ++
           movq (imm 1) (!%rax)    (* 整數長度固定為 1 *)
@@ -133,10 +132,12 @@ let rec generate_expr expr =
                 call "malloc" ++      (* 分配内存 *)
                 movq (!%rax) (!%r12) ++ (* 保存新字符串地址 *)
                 left_code ++
-                movq (!%r12) (!%rdx) ++
+                movq (!%rdi) (!%rsi) ++
+                movq (!%r12) (!%rdi) ++
                 call "strcpy" ++      (* 拷贝左字符串 *)
                 right_code ++
-                movq (!%r12) (!%rdx) ++
+                movq (!%rdi) (!%rsi) ++
+                movq (!%r12) (!%rdi) ++
                 call "strcat"         (* 拼接右字符串 *)
               in
               concat_code
@@ -183,12 +184,19 @@ let rec generate_stmt stmt =
       | _ -> false
     in
     (* 格式化字串選擇 *)
+    let involves_string =
+      match expr with
+      | TEcst (Cstring _) -> true
+      | TEbinop (Badd, TEcst (Cstring _), TEcst (Cstring _)) -> true
+      | TEbinop (Badd, _, TEcst (Cstring _)) -> true
+      | TEbinop (Badd, TEcst (Cstring _), _) -> true
+      | _ -> false
+    in
+    (* 格式化字串選擇 *)
     let format_label =
       if is_boolean_comparison then ".LCs"
-      else
-        match expr with
-        | TEcst (Cstring _) -> ".LCs"
-        | _ -> ".LCd"
+      else if involves_string then ".LCs"
+      else ".LCd"
     in
     (* 添加布爾值轉換邏輯 *)
     let bool_conversion_code =
@@ -218,11 +226,12 @@ let rec generate_stmt stmt =
         label format_label ++ string fmt
     in
     (* 加載格式字串 *)
-    let load_format_string =
-      if format_label = ".LCs" then
-        movq (ilab format_label) (!%rdx)
-      else
-        movq (ilab format_label) (!%rdi)
+    let load_format_string = match expr with
+      | TEcst (Cstring _) -> movq (ilab format_label) (!%rdx)
+      | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> movq (ilab format_label) (!%rdx)
+      | TEcst (Cbool _) -> movq (ilab format_label) (!%rdx)
+      | TEunop (Unot, _) -> movq (ilab format_label) (!%rdx)
+      | _ -> movq (ilab format_label) (!%rdi)
     in
     (* 打印代碼 *)
     let print_code =
@@ -279,10 +288,10 @@ let rec generate_stmt stmt =
 
 (* 初始化字符串表 *)
 let initialize () =
-  Hashtbl.add string_table ".LCtrue" "True\n";
-  Hashtbl.add string_table ".LCfalse" "False\n";
-  Hashtbl.add string_table ".LCs" "%s\n";
-  Hashtbl.add string_table ".LCd" "%d\n";
+  Hashtbl.add string_table ".LCtrue" "True";
+  Hashtbl.add string_table ".LCfalse" "False";
+  Hashtbl.add string_table ".LCs" "%s";
+  Hashtbl.add string_table ".LCd" "%d";
   Hashtbl.add function_table "len" {
     fn_name = "len";
     fn_params = [{ v_name = "arg"; v_ofs = 16; v_type = Tstring }];
@@ -302,10 +311,10 @@ let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
 
   (* 確保 .LCtrue, .LCfalse, .LCs 等標籤被正確定義在數據段 *)
   let string_data =
-    label ".LCtrue" ++ string "True\n" ++
-    label ".LCfalse" ++ string "False\n" ++
-    label ".LCs" ++ string "%s\n" ++
-    label ".LCd" ++ string "%d\n"
+    label ".LCtrue" ++ string "True" ++
+    label ".LCfalse" ++ string "False" ++
+    label ".LCs" ++ string "%s" ++
+    label ".LCd" ++ string "%d"
   in
   let len_code =
     globl "len" ++
