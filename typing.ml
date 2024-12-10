@@ -30,6 +30,52 @@ let is_int_type (texpr : texpr) : bool =
   | TEvar var when var.v_type = Tint -> true
   | _ -> false
 
+let is_list_type (texpr : texpr) : bool =
+  match texpr with
+  | TElist (_)-> true
+  (* | TEvar var when var.v_type = Tlist -> true、 *)
+  | _ -> false
+
+let rec print_expr fmt expr =
+  match expr with
+  | Ecst c -> Format.fprintf fmt "Ecst(%s)" (match c with
+      | Cnone -> "None"
+      | Cbool b -> string_of_bool b
+      | Cstring s -> Printf.sprintf "\"%s\"" s
+      | Cint i -> Int64.to_string i)
+  | Eident id -> Format.fprintf fmt "Eident(%s)" id.id
+  | Ebinop (op, e1, e2) -> 
+      Format.fprintf fmt "Ebinop(%s, %a, %a)"
+        (match op with
+        | Badd -> "+"
+        | Bsub -> "-"
+        | Bmul -> "*"
+        | Bdiv -> "//"
+        | Bmod -> "%"
+        | Beq -> "=="
+        | Bneq -> "!="
+        | Blt -> "<"
+        | Ble -> "<="
+        | Bgt -> ">"
+        | Bge -> ">="
+        | Band -> "and"
+        | Bor -> "or")
+        print_expr e1 print_expr e2
+  | Eunop (op, e) -> 
+      Format.fprintf fmt "Eunop(%s, %a)"
+        (match op with
+        | Uneg -> "-"
+        | Unot -> "not")
+        print_expr e
+  | Ecall (id, args) ->
+      Format.fprintf fmt "Ecall(%s, [%a])"
+        id.id
+        (Format.pp_print_list print_expr) args
+  | Elist elements ->
+      Format.fprintf fmt "Elist([%a])"
+        (Format.pp_print_list print_expr) elements
+  | Eget (e1, e2) ->
+      Format.fprintf fmt "Eget(%a, %a)" print_expr e1 print_expr e2
 
 (* 類型檢查表達式 *)
 let rec check_expr (e : expr) : texpr =
@@ -37,6 +83,15 @@ let rec check_expr (e : expr) : texpr =
   | Ecst (Cstring s) -> TEcst (Cstring s)
   | Ecst (Cint i) -> TEcst (Cint i)  (* 常量直接類型化 *)
   | Ecst (Cbool b) -> TEcst (Cbool b)
+  | Elist elements ->
+    (* Format.printf "Typing Elist: %a@." 
+      (Format.pp_print_list print_expr) elements; *)
+    let t_elements = List.map check_expr elements in
+    TElist t_elements
+  | Eget (e1, e2) -> 
+    let t_e1 = check_expr e1 in
+    let t_e2 = check_expr e2 in
+    TEget (t_e1, t_e2)
   | Eident id ->
       if Hashtbl.mem symbol_table id.id then
         TEvar (Hashtbl.find symbol_table id.id)  (* 使用符號表中變量信息 *)
@@ -56,7 +111,9 @@ let rec check_expr (e : expr) : texpr =
     let fn = Hashtbl.find function_table id.id in
     let targs = List.map check_expr args in
     TEcall (fn, targs)    
-  | _ -> error "Unsupported expression"
+  | _ -> 
+    Format.printf "Expression not supported: %a@." print_expr e;  
+    error "Unsupported expression"
 
 (* 類型檢查語句 *)
 let rec check_stmt (s : stmt) : tstmt =
@@ -71,6 +128,7 @@ let rec check_stmt (s : stmt) : tstmt =
         | TEcst (Cint _) -> Tint
         | TEcst (Cbool _) -> Tbool
         | TEcst (Cstring _) -> Tstring
+        | TElist _ -> Tnone 
         | _ -> Tnone
       in
       (* 檢查變量是否已存在符號表中 *)

@@ -1,7 +1,2 @@
-print(1<2)
-print( "13" + "asd")
-
-print(True)
-print(False)
-print(True and False)
-print(True or False)
+print( [3, 4] )
+print( [3 , 4 , 5 , 6, 8 ])

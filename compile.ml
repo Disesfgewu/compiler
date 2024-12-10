@@ -168,11 +168,64 @@ let rec generate_expr expr =
       | _ -> failwith "Unsupported operator"
     in
     (left_data ++ right_data, right_code ++ pushq (!%rax) ++ left_code ++ popq rbx ++ op_code)  
+    | TElist elements ->
+      let total_size = (List.length elements + 1) * 8 in
+      (* 为列表分配内存 *)
+      let alloc_code =
+        movq (imm total_size) (!%rdi) ++
+        call "malloc" ++
+        movq (!%rax) (!%r12) (* 保存分配的内存地址到 r12 *)
+      in
+      (* 初始化列表内容 *)
+      let init_code, data =
+        let rec store_elements idx acc_code acc_data = function
+          | [] -> (acc_code, acc_data)
+          | hd :: tl ->
+              let hd_data, hd_code = generate_expr hd in
+              let updated_code =
+                acc_code ++ hd_code ++
+                movq (!%rax) (ind ~ofs:(idx * 8) r12)
+              in
+              store_elements (idx + 1) updated_code (acc_data ++ hd_data) tl
+        in
+        store_elements 1 nop nop elements
+      in
+      let size_code = movq (imm (List.length elements)) (ind r12) in
+      (data, alloc_code ++ size_code ++ init_code ++ movq (!%r12) (!%rax))
+  
   | _ -> failwith "Unsupported expression"
 
 (* 生成语句的汇编代码 *)
 let rec generate_stmt stmt =
   match stmt with
+  | TSprint (TElist elements) ->
+    let start_code = movq (ilab ".LCstart") (!%rdi) ++ call "printf" in
+    let print_element idx expr =
+      let elem_data, elem_code = generate_expr expr in
+      let separator =
+        if idx < List.length elements - 1 then
+          movq (ilab ".LCcomma") (!%rdi) ++ call "printf"
+        else nop
+      in
+      (elem_data, elem_code ++
+       movq (!%rax) (!%rsi) ++
+       movq (ilab ".LCd") (!%rdi) ++
+       call "printf" ++
+       separator)
+    in
+    let elements_data, elements_code =
+      List.mapi print_element elements
+      |> List.split
+    in
+    let finalize = 
+      movq (ilab ".LCend") (!%rdi) ++ 
+      call "printf"  ++ 
+      movq (imm 10) (!%rdi) ++  (* 10 是 '\n' 的 ASCII 值 *)
+      call "putchar"
+    in
+    (List.fold_left (++) nop elements_data,
+     start_code ++ List.fold_left (++) nop elements_code ++ finalize)
+
   | TSprint expr ->
     let data_expr, code_expr = generate_expr expr in
     (* 判斷是否為布爾比較運算 *)
@@ -292,10 +345,14 @@ let initialize () =
   Hashtbl.add string_table ".LCfalse" "False";
   Hashtbl.add string_table ".LCs" "%s";
   Hashtbl.add string_table ".LCd" "%d";
+  Hashtbl.add string_table ".LCcomma" ", ";
+  Hashtbl.add string_table ".LCstart" "[";
+  Hashtbl.add string_table ".LCend" "]\n";
   Hashtbl.add function_table "len" {
     fn_name = "len";
     fn_params = [{ v_name = "arg"; v_ofs = 16; v_type = Tstring }];
   }
+
 (* 生成主函数代码 *)
 let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
   debug := b;
@@ -314,7 +371,10 @@ let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
     label ".LCtrue" ++ string "True" ++
     label ".LCfalse" ++ string "False" ++
     label ".LCs" ++ string "%s" ++
-    label ".LCd" ++ string "%d"
+    label ".LCd" ++ string "%d" ++
+    label ".LCcomma" ++ string ", " ++
+    label ".LCstart" ++ string "[" ++
+    label ".LCend" ++ string "]" 
   in
   let len_code =
     globl "len" ++
