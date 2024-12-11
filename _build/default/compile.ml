@@ -71,13 +71,15 @@ let rec generate_expr expr =
         let code = movq (imm (if b then 1 else 0)) (!%rax) in
         (nop, code)
   | TEvar var ->
-    let code =
+    let load_var =
       if var.v_type = Tstring then
-        movq (ind ~ofs:var.v_ofs rbp) (!%rdx)
-      else
+        movq (ind ~ofs:var.v_ofs rbp) (!%rdi)
+      else if var.v_type = Tint then
         movq (ind ~ofs:var.v_ofs rbp) (!%rax)
+      else (* 假设变量是一个列表 *)
+        movq (ind ~ofs:var.v_ofs rbp) (!%r12)
     in
-    (nop, code)
+    (nop, load_var)
   | TEunop (Unot, expr) ->
       let data, code = generate_expr expr in
       let op_code =
@@ -198,106 +200,136 @@ let rec generate_expr expr =
 (* 生成语句的汇编代码 *)
 let rec generate_stmt stmt =
   match stmt with
-  | TSprint (TElist elements) ->
-    let start_code = movq (ilab ".LCstart") (!%rdi) ++ call "printf" in
-    let print_element idx expr =
-      let elem_data, elem_code = generate_expr expr in
-      let separator =
-        if idx < List.length elements - 1 then
-          movq (ilab ".LCcomma") (!%rdi) ++ call "printf"
-        else nop
-      in
-      (elem_data, elem_code ++
-       movq (!%rax) (!%rsi) ++
-       movq (ilab ".LCd") (!%rdi) ++
-       call "printf" ++
-       separator)
-    in
-    let elements_data, elements_code =
-      List.mapi print_element elements
-      |> List.split
-    in
-    let finalize = 
-      movq (ilab ".LCend") (!%rdi) ++ 
-      call "printf"  ++ 
-      movq (imm 10) (!%rdi) ++  (* 10 是 '\n' 的 ASCII 值 *)
-      call "putchar"
-    in
-    (List.fold_left (++) nop elements_data,
-     start_code ++ List.fold_left (++) nop elements_code ++ finalize)
-
   | TSprint expr ->
     let data_expr, code_expr = generate_expr expr in
-    (* 判斷是否為布爾比較運算 *)
-    let is_boolean_comparison =
-      match expr with
-      | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> true
-      | TEunop (Unot, _) -> true
-      | TEcst (Cbool _) -> true
-      | _ -> false
-    in
-    (* 格式化字串選擇 *)
-    let involves_string =
-      match expr with
-      | TEcst (Cstring _) -> true
-      | TEbinop (Badd, TEcst (Cstring _), TEcst (Cstring _)) -> true
-      | TEbinop (Badd, _, TEcst (Cstring _)) -> true
-      | TEbinop (Badd, TEcst (Cstring _), _) -> true
-      | _ -> false
-    in
-    (* 格式化字串選擇 *)
-    let format_label =
-      if is_boolean_comparison then ".LCs"
-      else if involves_string then ".LCs"
-      else ".LCd"
-    in
-    (* 添加布爾值轉換邏輯 *)
-    let bool_conversion_code =
-      if is_boolean_comparison then
-        let true_label = fresh_unique_label () in
-        let end_label = fresh_unique_label () in
-        cmpq (imm 1) (!%rax) ++
-        jne true_label ++
-        movq (ilab ".LCtrue") (!%rdi) ++
-        jmp end_label ++
-        label true_label ++
-        movq (ilab ".LCfalse") (!%rdi) ++
-        label end_label
-      else nop
-    in
-    (* 確保格式化數據段存在 *)
-    let format_data =
-      if Hashtbl.mem string_table format_label then
-        nop
-      else
-        let fmt = match format_label with
-          | ".LCs" -> "%s\n"
-          | ".LCd" -> "%d\n"
-          | _ -> "%d\n"
-        in
-        Hashtbl.add string_table format_label fmt;
-        label format_label ++ string fmt
-    in
-    (* 加載格式字串 *)
-    let load_format_string = match expr with
-      | TEcst (Cstring _) -> movq (ilab format_label) (!%rdx)
-      | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> movq (ilab format_label) (!%rdx)
-      | TEcst (Cbool _) -> movq (ilab format_label) (!%rdx)
-      | TEunop (Unot, _) -> movq (ilab format_label) (!%rdx)
-      | _ -> movq (ilab format_label) (!%rdi)
-    in
-    (* 打印代碼 *)
     let print_code =
-      code_expr ++
-      bool_conversion_code ++
-      movq (!%rax) (!%rsi) ++
-      load_format_string ++
-      movq (imm 0) (!%rax) ++
-      call "printf" ++
-      movq (imm 10) (!%rdi) ++  (* 10 是 '\n' 的 ASCII 值 *)
-      call "putchar"
+      match expr with
+      | TElist elements ->
+          let start_code = movq (ilab ".LCstart") (!%rdi) ++ call "printf" in
+          let print_element idx expr =
+            let elem_data, elem_code = generate_expr expr in
+            let separator =
+              if idx < List.length elements - 1 then
+                movq (ilab ".LCcomma") (!%rdi) ++ call "printf"
+              else nop
+            in
+            (elem_data, elem_code ++
+             movq (!%rax) (!%rsi) ++
+             movq (ilab ".LCd") (!%rdi) ++
+             call "printf" ++
+             separator)
+          in
+          let elements_data, elements_code =
+            List.mapi print_element elements
+            |> List.split
+          in
+          let finalize =
+            movq (ilab ".LCend") (!%rdi) ++
+            call "printf"  ++
+            movq (imm 10) (!%rdi) ++  (* 10 是 '\n' 的 ASCII 值 *)
+            call "putchar"
+          in
+          (List.fold_left (++) nop elements_data,
+           start_code ++ List.fold_left (++) nop elements_code ++ finalize)
+      | TEvar var ->  (* 如果是變數，且變數類型為 list *)
+          let load_code = movq (ind ~ofs:var.v_ofs rbp) (!%r12) in
+          let start_code = movq (ilab ".LCstart") (!%rdi) ++ call "printf" in
+          let print_loop =
+            call "print_list" 
+            (* movq (ind r12) (!%r15) ++  (* 加載清單長度到 rcx *)
+            xorq (!%r14) (!%r14) ++    (* 初始化索引 rdx = 0 *)
+            label "print_list_loop" ++
+            cmpq (!%r14) (!%r15) ++    (* 檢查索引是否到達清單尾端 *)
+            je "print_list_end" ++
+            movq (!%r14) (!%rdx) ++
+            (* 計算清單當前元素的地址 *)
+            imulq (imm 8) (!%rdx) ++        (* rdx = rdx * 8 *)
+            addq (imm 8) (!%rdx) ++         (* rdx = rdx + 8，跳過長度字段 *)
+            leaq (ind ~ofs:0 r12) (rsi) ++
+            addq (!%rdx) (!%rsi) ++         (* rsi = rsi + rdx (完整地址) *)
+            movq (ind rsi) (!%rax) ++       (* 加載當前元素的值 *)
+            movq (!%rax) (!%rsi) ++         (* 輸出值到 rsi *)
+            movq (ilab ".LCd") (!%rdi) ++ call "printf" ++
+            addq (imm 1) (!%r14) ++         (* rdx = rdx + 1 *)
+            cmpq (!%r14) (!%r15) ++    (* 檢查索引是否到達清單尾端 *)
+            je "print_list_end" ++
+            movq (ilab ".LCcomma") (!%rdi) ++ call "printf" ++
+            jmp "print_list_loop" ++
+            label "print_list_end" *)
+          in          
+          (* let finalize =
+            movq (ilab ".LCend") (!%rdi) ++
+            call "printf"  ++
+            movq (imm 10) (!%rdi) ++  (* 10 是 '\n' 的 ASCII 值 *)
+            call "putchar"
+          in *)
+          (nop, load_code ++ start_code ++ print_loop )
+      | _ ->  (* 其他情況，當作一般變數處理 *)
+          let is_boolean_comparison =
+            match expr with
+            | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> true
+            | TEunop (Unot, _) -> true
+            | TEcst (Cbool _) -> true
+            | _ -> false
+          in
+          let involves_string =
+            match expr with
+            | TEcst (Cstring _) -> true
+            | TEbinop (Badd, TEcst (Cstring _), TEcst (Cstring _)) -> true
+            | TEbinop (Badd, _, TEcst (Cstring _)) -> true
+            | TEbinop (Badd, TEcst (Cstring _), _) -> true
+            | _ -> false
+          in
+          let format_label =
+            if is_boolean_comparison then ".LCs"
+            else if involves_string then ".LCs"
+            else ".LCd"
+          in
+          let bool_conversion_code =
+            if is_boolean_comparison then
+              let true_label = fresh_unique_label () in
+              let end_label = fresh_unique_label () in
+              cmpq (imm 1) (!%rax) ++
+              jne true_label ++
+              movq (ilab ".LCtrue") (!%rdi) ++
+              jmp end_label ++
+              label true_label ++
+              movq (ilab ".LCfalse") (!%rdi) ++
+              label end_label
+            else nop
+          in
+          let format_data =
+            if Hashtbl.mem string_table format_label then
+              nop
+            else
+              let fmt = match format_label with
+                | ".LCs" -> "%s\n"
+                | ".LCd" -> "%d\n"
+                | _ -> "%d\n"
+              in
+              Hashtbl.add string_table format_label fmt;
+              label format_label ++ string fmt
+          in
+          let load_format_string = match expr with
+            | TEcst (Cstring _) -> movq (ilab format_label) (!%rdx)
+            | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> movq (ilab format_label) (!%rdx)
+            | TEcst (Cbool _) -> movq (ilab format_label) (!%rdx)
+            | TEunop (Unot, _) -> movq (ilab format_label) (!%rdx)
+            | _ -> movq (ilab format_label) (!%rdi)
+          in
+          let print_code_2 =
+            code_expr ++
+            bool_conversion_code ++
+            movq (!%rax) (!%rsi) ++
+            load_format_string ++
+            movq (imm 0) (!%rax) ++
+            call "printf" ++
+            movq (imm 10) (!%rdi) ++  (* 10 是 '\n' 的 ASCII 值 *)
+            call "putchar"
+          in
+          (data_expr ++ format_data, print_code_2)
     in
-    (data_expr ++ format_data, print_code)
+    (print_code)
   | TSassign (var, expr) ->
       let data, code = generate_expr expr in
       let assign_code = movq (!%rax) (ind ~ofs:var.v_ofs rbp) in
@@ -376,6 +408,42 @@ let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
     label ".LCstart" ++ string "[" ++
     label ".LCend" ++ string "]" 
   in
+  let print_list =
+    label "print_list" ++
+    pushq (!%r12) ++
+    pushq (!%r14) ++
+    pushq (!%r15) ++
+    movq (ind r12) (!%r15) ++  (* 加載清單長度到 rcx *)
+    xorq (!%r14) (!%r14) ++    (* 初始化索引 rdx = 0 *)
+    label "print_list_loop" ++
+    cmpq (!%r14) (!%r15) ++    (* 檢查索引是否到達清單尾端 *)
+    je "print_list_end" ++
+    movq (!%r14) (!%rdx) ++
+    (* 計算清單當前元素的地址 *)
+    imulq (imm 8) (!%rdx) ++        (* rdx = rdx * 8 *)
+    addq (imm 8) (!%rdx) ++         (* rdx = rdx + 8，跳過長度字段 *)
+    leaq (ind ~ofs:0 r12) (rsi) ++
+    addq (!%rdx) (!%rsi) ++         (* rsi = rsi + rdx (完整地址) *)
+    movq (ind rsi) (!%rax) ++       (* 加載當前元素的值 *)
+    movq (!%rax) (!%rsi) ++         (* 輸出值到 rsi *)
+    movq (ilab ".LCd") (!%rdi) ++ call "printf" ++
+    addq (imm 1) (!%r14) ++         (* rdx = rdx + 1 *)
+    cmpq (!%r14) (!%r15) ++    (* 檢查索引是否到達清單尾端 *)
+    je "print_list_end" ++
+    movq (ilab ".LCcomma") (!%rdi) ++ call "printf" ++
+    jmp "print_list_loop" ++
+    label "print_list_end" ++
+    movq (ilab ".LCend") (!%rdi) ++
+    call "printf"  ++
+    movq (imm 10) (!%rdi) ++  (* 10 是 '\n' 的 ASCII 值 *)
+    call "putchar" ++
+    movq (imm 0) (!%rax) ++
+    popq (r15) ++
+    popq (r14) ++
+    popq (r12) ++
+    leave ++
+    ret
+  in
   let len_code =
     globl "len" ++
     label "len" ++
@@ -399,4 +467,4 @@ let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
   in
 
   (* 返回包含 data 和 text 的結果，並將 string_data 添加到 data 中 *)
-  { text = text ++ len_code; data = data ++ string_data }
+  { text = text ++ len_code ++ print_list ; data = data ++ string_data }
