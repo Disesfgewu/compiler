@@ -7,30 +7,29 @@ main:
 	call malloc
 	movq %rax, %r12
 	movq $3, 0(%r12)
+	movq $111, %rax
+	movq %rax, 8(%r12)
+	movq $222, %rax
+	movq %rax, 16(%r12)
+	movq $333, %rax
+	movq %rax, 24(%r12)
+	movq %r12, %rax
+	movq %rax, -16(%rbp)
 	movq $1, %rax
-	movq %rax, 8(%r12)
-	movq $2, %rax
-	movq %rax, 16(%r12)
-	movq $3, %rax
-	movq %rax, 24(%r12)
-	movq %r12, %rax
-	movq %rax, %r15
-	movq $32, %rdi
-	call malloc
-	movq %rax, %r12
-	movq $3, 0(%r12)
-	movq %r15, %r12
-	movq %rax, 8(%r12)
-	movq %r15, %r12
-	movq %rax, 16(%r12)
-	movq %r15, %r12
-	movq %rax, 24(%r12)
-	movq %r12, %rax
-	movq %rax, %r15
-	movq %r15, %r12
-	movq $.LCstart, %rdi
+	movq %rax, %rdx
+	imulq $8, %rdx
+	addq $8, %rdx
+	movq -16(%rbp), %r12
+	leaq (%r12,%rdx), %rsi
+	movq 0(%rsi), %rax
+	addq %rdx, %rax
+	movq 0(%rsi), %rax
+	movq %rax, %rsi
+	movq $.LCd, %rdi
+	movq $0, %rax
 	call printf
-	call print_list
+	movq $10, %rdi
+	call putchar
 	movq $0, %rax
 	leave
 	ret

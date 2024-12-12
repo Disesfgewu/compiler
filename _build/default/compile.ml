@@ -77,7 +77,7 @@ let rec generate_expr expr =
       else if var.v_type = Tint then
         movq (ind ~ofs:var.v_ofs rbp) (!%rax)
       else (* 假设变量是一个列表 *)
-        movq (ind ~ofs:var.v_ofs rbp) (!%r12)
+        movq (!%r15) (!%r12)
     in
     (nop, load_var)
   | TEunop (Unot, expr) ->
@@ -170,7 +170,7 @@ let rec generate_expr expr =
       | _ -> failwith "Unsupported operator"
     in
     (left_data ++ right_data, right_code ++ pushq (!%rax) ++ left_code ++ popq rbx ++ op_code)  
-    | TElist elements ->
+  | TElist elements ->
       let total_size = (List.length elements + 1) * 8 in
       (* 为列表分配内存 *)
       let alloc_code =
@@ -194,7 +194,26 @@ let rec generate_expr expr =
       in
       let size_code = movq (imm (List.length elements)) (ind r12) in
       (data, alloc_code ++ size_code ++ init_code ++ movq (!%r12) (!%rax))
-  
+  | TEget (lst, idx) ->
+    let lst_data, lst_code = generate_expr lst in
+    let idx_data, idx_code = generate_expr idx in
+    let get_code =
+      (* 計算索引的偏移量 *)
+      idx_code ++
+      movq (!%rax) (!%rdx) ++
+      imulq (imm 8) (!%rdx) ++
+      addq (imm 8) (!%rdx) ++ (* 加 8 跳過 list 長度 *)
+      
+      (* 取得列表的起始地址 *)
+      lst_code ++
+      movq (!%rax) (!%rsi) ++
+
+      (* 加載列表元素的值 *)
+      leaq (ind r12 ~index:rdx ~scale:1) (rsi) ++ 
+      addq (!%rdx) (!%rax) ++
+      movq (ind (rsi)) (!%rax)
+    in
+    (lst_data ++ idx_data, get_code)
   | _ -> failwith "Unsupported expression"
 
 (* 生成语句的汇编代码 *)
@@ -232,39 +251,12 @@ let rec generate_stmt stmt =
           (List.fold_left (++) nop elements_data,
            start_code ++ List.fold_left (++) nop elements_code ++ finalize)
       | TEvar { v_type = Tnone; v_ofs } ->  (* 如果是變數，且變數類型為 list *)
-          let load_code = movq (ind ~ofs:v_ofs rbp) (!%r12) in
+          let load_code = movq (!%r15) (!%r12) in
           let start_code = movq (ilab ".LCstart") (!%rdi) ++ call "printf" in
           let print_loop =
             call "print_list" 
-            (* movq (ind r12) (!%r15) ++  (* 加載清單長度到 rcx *)
-            xorq (!%r14) (!%r14) ++    (* 初始化索引 rdx = 0 *)
-            label "print_list_loop" ++
-            cmpq (!%r14) (!%r15) ++    (* 檢查索引是否到達清單尾端 *)
-            je "print_list_end" ++
-            movq (!%r14) (!%rdx) ++
-            (* 計算清單當前元素的地址 *)
-            imulq (imm 8) (!%rdx) ++        (* rdx = rdx * 8 *)
-            addq (imm 8) (!%rdx) ++         (* rdx = rdx + 8，跳過長度字段 *)
-            leaq (ind ~ofs:0 r12) (rsi) ++
-            addq (!%rdx) (!%rsi) ++         (* rsi = rsi + rdx (完整地址) *)
-            movq (ind rsi) (!%rax) ++       (* 加載當前元素的值 *)
-            movq (!%rax) (!%rsi) ++         (* 輸出值到 rsi *)
-            movq (ilab ".LCd") (!%rdi) ++ call "printf" ++
-            addq (imm 1) (!%r14) ++         (* rdx = rdx + 1 *)
-            cmpq (!%r14) (!%r15) ++    (* 檢查索引是否到達清單尾端 *)
-            je "print_list_end" ++
-            movq (ilab ".LCcomma") (!%rdi) ++ call "printf" ++
-            jmp "print_list_loop" ++
-            label "print_list_end" *)
           in          
-          (* let finalize =
-            movq (ilab ".LCend") (!%rdi) ++
-            call "printf"  ++
-            movq (imm 10) (!%rdi) ++  (* 10 是 '\n' 的 ASCII 值 *)
-            call "putchar"
-          in *)
           (nop, load_code ++ start_code ++ print_loop )
-          
       | _ ->  (* 其他情況，當作一般變數處理 *)
           let is_boolean_comparison =
             match expr with
@@ -333,7 +325,12 @@ let rec generate_stmt stmt =
     (print_code)
   | TSassign (var, expr) ->
       let data, code = generate_expr expr in
-      let assign_code = movq (!%rax) (ind ~ofs:var.v_ofs rbp) in
+      let assign_code = 
+        if var.v_type = Tnone then
+          movq (!%rax) (!%r15) 
+        else 
+          movq (!%rax) (ind ~ofs:var.v_ofs rbp)
+        in
       (data, code ++ assign_code)
   | TSblock stmts ->
       let datas, codes = List.split (List.map generate_stmt stmts) in
