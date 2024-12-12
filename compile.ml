@@ -231,8 +231,8 @@ let rec generate_stmt stmt =
           in
           (List.fold_left (++) nop elements_data,
            start_code ++ List.fold_left (++) nop elements_code ++ finalize)
-      | TEvar var ->  (* 如果是變數，且變數類型為 list *)
-          let load_code = movq (ind ~ofs:var.v_ofs rbp) (!%r12) in
+      | TEvar { v_type = Tnone; v_ofs } ->  (* 如果是變數，且變數類型為 list *)
+          let load_code = movq (ind ~ofs:v_ofs rbp) (!%r12) in
           let start_code = movq (ilab ".LCstart") (!%rdi) ++ call "printf" in
           let print_loop =
             call "print_list" 
@@ -264,6 +264,7 @@ let rec generate_stmt stmt =
             call "putchar"
           in *)
           (nop, load_code ++ start_code ++ print_loop )
+          
       | _ ->  (* 其他情況，當作一般變數處理 *)
           let is_boolean_comparison =
             match expr with
@@ -441,17 +442,6 @@ let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
     popq (r15) ++
     popq (r14) ++
     popq (r12) ++
-    leave ++
-    ret
-  in
-  let len_code =
-    globl "len" ++
-    label "len" ++
-    pushq (!%rbp) ++
-    movq (!%rsp) (!%rbp) ++
-    movq (ind ~ofs:16 rbp) (!%rsi) ++
-    call "strlen" ++
-    leave ++
     ret
   in
   (* 生成 main 函數的 text 部分 *)
@@ -467,4 +457,4 @@ let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
   in
 
   (* 返回包含 data 和 text 的結果，並將 string_data 添加到 data 中 *)
-  { text = text ++ len_code ++ print_list ; data = data ++ string_data }
+  { text = text ++ print_list ; data = data ++ string_data }
