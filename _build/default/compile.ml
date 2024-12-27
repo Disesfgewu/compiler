@@ -61,15 +61,26 @@ let rec generate_expr expr =
       let code = movq (imm (Int64.to_int value)) (!%rax) in
       (nop, code)
   | TEcst (Cstring s) ->
-      let label_name = ".LC" ^ string_of_int (Hashtbl.hash s) in
-      if not (Hashtbl.mem string_table label_name) then
-        Hashtbl.add string_table label_name s;
-      let data = label label_name ++ string (s) in
-      let code = movq (ilab label_name) (!%rdi) in
-      (data, code)
-      | TEcst (Cbool b) ->
-        let code = movq (imm (if b then 1 else 0)) (!%rax) in
-        (nop, code)
+    let was_already_defined = Hashtbl.mem string_table s in
+    let label_name = 
+      if was_already_defined then
+        Hashtbl.find string_table s
+      else
+        let new_label = fresh_unique_label () in
+        Hashtbl.add string_table s new_label;
+        new_label 
+    in
+    let data = 
+      if was_already_defined then
+        nop
+      else
+        label label_name ++ string s
+    in
+    let code = movq (ilab label_name) (!%rdi) in
+    (data, code)
+    | TEcst (Cbool b) ->
+      let code = movq (imm (if b then 1 else 0)) (!%rax) in
+      (nop, code)
   | TEvar var ->
     let load_var =
       if var.v_type = Tstring then
@@ -149,22 +160,52 @@ let rec generate_expr expr =
       | Bdiv -> cqto ++ idivq (!%rbx)
       | Bmod -> cqto ++ idivq (!%rbx) ++ movq (!%rdx) (!%rax)
       | Beq | Bneq | Blt | Ble | Bgt | Bge ->
-          let set_rax_to_1_label = fresh_unique_label () in
-          let end_label = fresh_unique_label () in
-          cmpq (!%rbx) (!%rax) ++
-          (match op with
-            | Beq -> je set_rax_to_1_label
-            | Bneq -> jne set_rax_to_1_label
-            | Blt -> jl set_rax_to_1_label
-            | Ble -> jle set_rax_to_1_label
-            | Bgt -> jg set_rax_to_1_label
-            | Bge -> jge set_rax_to_1_label
-            | _ -> nop) ++
-          movq (imm 0) (!%rax) ++
-          jmp end_label ++
-          label set_rax_to_1_label ++
-          movq (imm 1) (!%rax) ++
-          label end_label
+          (match left, right with
+            | TElist lefts, TElist rights ->
+                let compare_label = fresh_unique_label () in
+                let end_label = fresh_unique_label () in
+                let code =
+                  (* 调用 compare_lists 函数 *)
+                  left_code ++ 
+                  movq (!%rax) (!%rdi) ++ 
+                  right_code ++ 
+                  movq (!%rax) (!%rsi) ++
+                  call "compare_lists" ++ 
+
+                  (* 根据 compare_lists 的返回值设置 %rax *)
+                  cmpq (imm 0) (!%rax) ++
+                  (match op with
+                  | Beq -> je compare_label
+                  | Bneq -> jne compare_label
+                  | Blt -> jl compare_label
+                  | Ble -> jle compare_label
+                  | Bgt -> jg compare_label
+                  | Bge -> jge compare_label
+                  | _ -> nop) ++
+                  movq (imm 0) (!%rax) ++
+                  jmp end_label ++
+                  label compare_label ++
+                  movq (imm 1) (!%rax) ++
+                  label end_label
+                in
+                 code
+            | _ ->  (* 其他类型的比较 *)
+                let set_rax_to_1_label = fresh_unique_label () in
+                let end_label = fresh_unique_label () in
+                cmpq (!%rbx) (!%rax) ++
+                (match op with
+                | Beq -> je set_rax_to_1_label
+                | Bneq -> jne set_rax_to_1_label
+                | Blt -> jl set_rax_to_1_label
+                | Ble -> jle set_rax_to_1_label
+                | Bgt -> jg set_rax_to_1_label
+                | Bge -> jge set_rax_to_1_label
+                | _ -> nop) ++
+                movq (imm 0) (!%rax) ++
+                jmp end_label ++
+                label set_rax_to_1_label ++
+                movq (imm 1) (!%rax) ++
+                label end_label)
       | Band -> andq (!%rbx) (!%rax)
       | Bor -> orq (!%rbx) (!%rax)
       | _ -> failwith "Unsupported operator"
@@ -175,7 +216,7 @@ let rec generate_expr expr =
       (* 为列表分配内存 *)
       let alloc_code =
         movq (imm total_size) (!%rdi) ++
-        call "malloc" ++
+        call "malloc@PLT" ++
         movq (!%rax) (!%r12) (* 保存分配的内存地址到 r12 *)
       in
       (* 初始化列表内容 *)
@@ -441,12 +482,53 @@ let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
     popq (r12) ++
     ret
   in
+  let compare_lists =
+    label "compare_lists" ++
+    pushq (!%rbp) ++
+    movq (!%rsp) (!%rbp) ++
+    movq (ind ~ofs:16 rbp) (!%rdi) ++
+    movq (ind ~ofs:24 rbp) (!%rsi) ++
+    movq (ind rdi) (!%rax) ++
+    movq (ind rsi) (!%rbx) ++
+    cmpq (!%rax) (!%rbx) ++
+    jl "list1_shorter" ++
+    jg "list2_shorter" ++
+    movq (imm 8) (!%rcx) ++
+    jmp "compare_loop" ++
+    label "list1_shorter" ++
+    movq (imm (-1)) (!%rax) ++
+    jmp "end_compare" ++
+    label "list2_shorter" ++
+    movq (imm 1) (!%rax) ++
+    jmp "end_compare" ++
+    label "compare_loop" ++
+    cmpq (!%rcx) (!%rax) ++
+    jge "end_compare" ++
+    movq (ind rdi ~index:rcx ~scale:8) (!%rdx) ++
+    movq (ind rsi ~index:rcx ~scale:8) (!%r8) ++
+    cmpq (!%rdx) (!%r8) ++
+    jl "list1_smaller" ++
+    jg "list2_smaller" ++
+    addq (imm 8) (!%rcx) ++
+    jmp "compare_loop" ++
+    label "list1_smaller" ++
+    movq (imm (-1)) (!%rax) ++
+    jmp "end_compare" ++
+    label "list2_smaller" ++
+    movq (imm 1) (!%rax) ++
+    jmp "end_compare" ++
+    label "end_compare" ++
+    leave ++
+    ret
+  in
+
   (* 生成 main 函數的 text 部分 *)
   let text =
     globl "main" ++
     label "main" ++
     pushq (!%rbp) ++
     movq (!%rsp) (!%rbp) ++
+    andq (imm (-16)) (!%rsp) ++
     main_code ++
     movq (imm 0) (!%rax) ++
     leave ++
@@ -454,4 +536,4 @@ let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
   in
 
   (* 返回包含 data 和 text 的結果，並將 string_data 添加到 data 中 *)
-  { text = text ++ print_list ; data = data ++ string_data }
+  { text = text ++ print_list ++ compare_lists; data = data ++ string_data }
