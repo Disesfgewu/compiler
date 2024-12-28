@@ -1,19 +1,20 @@
 #include <stdio.h>
-#include <stdlib.h>
+#include <string.h>
 
 int main() {
-  // 分配空間給一個整數
-  int *ptr = (int *)malloc(sizeof(int)); 
+    const char *str1 = "";  // 第一個字串
+    const char *str2 = "a"; // 第二個字串
 
-  if (ptr == NULL) {
-    printf("記憶體分配失敗!\n");
-    return 1; 
-  }
+    int result = strcmp("", "a"); // 使用 strcmp 進行比較
 
-  *ptr = 10; 
-  printf("在記憶體位置 %p 的值是 %d\n", ptr, *ptr);
+    // 根據 strcmp 的返回值輸出比較結果
+    if (result < 0) {
+        printf("\"%s\" < \"%s\": True\n", str1, str2);
+    } else if (result == 0) {
+        printf("\"%s\" == \"%s\": False\n", str1, str2);
+    } else {
+        printf("\"%s\" > \"%s\": False\n", str1, str2);
+    }
 
-  // 釋放記憶體
-  free(ptr);
-  return 0;
+    return 0;
 }

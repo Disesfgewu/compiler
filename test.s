@@ -4,24 +4,30 @@ main:
 	pushq %rbp
 	movq %rsp, %rbp
 	andq $-16, %rsp
-	movq $.LC0, %rdi
+	movq $.LC1, %rdi
 	pushq %rax
 	movq $.LC0, %rdi
 	popq %rbx
-	cmpq %rbx, %rax
-	je .LC1
+	movq $.LC0, %rdi
+	movq %rdi, %rcx
+	movq $.LC1, %rdi
+	movq %rdi, %rsi
+	movq %rcx, %rdi
+	call strcmp
+	cmpq $0, %rax
+	jg .LC2
 	movq $0, %rax
-	jmp .LC2
-.LC1:
-	movq $1, %rax
+	jmp .LC3
 .LC2:
-	cmpq $1, %rax
-	jne .LC3
-	movq $.LCtrue, %rdi
-	jmp .LC4
+	movq $1, %rax
 .LC3:
-	movq $.LCfalse, %rdi
+	cmpq $1, %rax
+	jne .LC4
+	movq $.LCtrue, %rdi
+	jmp .LC5
 .LC4:
+	movq $.LCfalse, %rdi
+.LC5:
 	movq %rax, %rsi
 	movq $.LCs, %rdx
 	movq $0, %rax
@@ -104,7 +110,9 @@ end_compare:
 	ret
 	.data
 .LC0:
-	.string "123"
+	.string ""
+.LC1:
+	.string "a"
 .LCtrue:
 	.string "True"
 .LCfalse:

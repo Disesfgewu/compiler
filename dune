@@ -7,4 +7,5 @@
 (executable
  (name minipython)
  (promote (until-clean))
- (flags ()))
+ (flags ())
+ (libraries str))

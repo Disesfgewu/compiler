@@ -2,15 +2,20 @@
 	.text
 	.section	.rodata
 .LC0:
-	.string	"\350\250\230\346\206\266\351\253\224\345\210\206\351\205\215\345\244\261\346\225\227!"
-	.align 8
+	.string	""
 .LC1:
-	.string	"\345\234\250\350\250\230\346\206\266\351\253\224\344\275\215\347\275\256 %p \347\232\204\345\200\274\346\230\257 %d\n"
+	.string	"a"
+.LC2:
+	.string	"\"%s\" < \"%s\": True\n"
+.LC3:
+	.string	"\"%s\" == \"%s\": False\n"
+.LC4:
+	.string	"\"%s\" > \"%s\": False\n"
 	.text
 	.globl	main
 	.type	main, @function
 main:
-.LFB6:
+.LFB0:
 	.cfi_startproc
 	endbr64
 	pushq	%rbp
@@ -18,36 +23,45 @@ main:
 	.cfi_offset 6, -16
 	movq	%rsp, %rbp
 	.cfi_def_cfa_register 6
-	subq	$16, %rsp
-	movq	$4, %rdi
-	call	malloc@PLT
+	subq	$32, %rsp
+	leaq	.LC0(%rip), %rax
+	movq	%rax, -16(%rbp)
+	leaq	.LC1(%rip), %rax
 	movq	%rax, -8(%rbp)
-	cmpq	$0, -8(%rbp)
-	jne	.L2
-	leaq	.LC0(%rip), %rdi
-	call	puts@PLT
-	movl	$1, %eax
-	jmp	.L3
-.L2:
-	movq	-8(%rbp), %rax
-	movl	$10, (%rax)
-	movq	-8(%rbp), %rax
-	movl	(%rax), %edx
-	movq	-8(%rbp), %rax
+	movl	$-1, -20(%rbp)
+	cmpl	$0, -20(%rbp)
+	jns	.L2
+	movq	-8(%rbp), %rdx
+	movq	-16(%rbp), %rax
 	movq	%rax, %rsi
-	leaq	.LC1(%rip), %rdi
+	leaq	.LC2(%rip), %rdi
 	movl	$0, %eax
 	call	printf@PLT
-	movq	-8(%rbp), %rax
-	movq	%rax, %rdi
-	call	free@PLT
+	jmp	.L3
+.L2:
+	cmpl	$0, -20(%rbp)
+	jne	.L4
+	movq	-8(%rbp), %rdx
+	movq	-16(%rbp), %rax
+	movq	%rax, %rsi
+	leaq	.LC3(%rip), %rdi
 	movl	$0, %eax
+	call	printf@PLT
+	jmp	.L3
+.L4:
+	movq	-8(%rbp), %rdx
+	movq	-16(%rbp), %rax
+	movq	%rax, %rsi
+	leaq	.LC4(%rip), %rdi
+	movl	$0, %eax
+	call	printf@PLT
 .L3:
+	movl	$0, %eax
 	leave
 	.cfi_def_cfa 7, 8
 	ret
 	.cfi_endproc
-.LFE6:
+.LFE0:
 	.size	main, .-main
 	.ident	"GCC: (Ubuntu 9.4.0-1ubuntu1~20.04.2) 9.4.0"
 	.section	.note.GNU-stack,"",@progbits

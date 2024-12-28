@@ -1,110 +1,119 @@
-.text
-.globl main
+	.text
+	.globl	main
 main:
-    pushq %rbp
-    movq %rsp, %rbp
-
-    # 確保堆疊對齊到 16 字節
-    andq $-16, %rsp
-
-    # 分配內存並初始化第一個列表 [1]
-    movq $16, %rdi              # 請求 16 位元組內存
-    call malloc@PLT
-    testq %rax, %rax            # 檢查 malloc 是否成功
-    je malloc_fail
-    movq %rax, %r12             # 保存第一個列表地址
-    movq $1, 0(%r12)            # 設置長度為 1
-    movq $1, 8(%r12)            # 設置第一個元素為 1
-
-    # 分配內存並初始化第二個列表 [1]
-    movq $16, %rdi              # 請求 16 位元組內存
-    call malloc@PLT
-    testq %rax, %rax            # 檢查 malloc 是否成功
-    je malloc_fail
-    movq %rax, %r13             # 保存第二個列表地址
-    movq $1, 0(%r13)            # 設置長度為 1
-    movq $1, 8(%r13)            # 設置第一個元素為 1
-
-    # 調用 compare_lists 比較兩個列表
-    movq %r12, %rdi             # 第一個列表地址傳遞到 %rdi
-    movq %r13, %rsi             # 第二個列表地址傳遞到 %rsi
-    call compare_lists          # 調用比較函數
-    cmpq $0, %rax               # 比較結果是否為 0（相等）
-    je print_true               # 如果相等，跳轉到輸出 True
-    jmp print_false             # 否則，跳轉到輸出 False
-
-print_true:
-    movq $.LCtrue, %rdi
-    call printf@PLT
-    jmp program_end
-
-print_false:
-    movq $.LCfalse, %rdi
-    call printf@PLT
-    jmp program_end
-
-malloc_fail:
-    movq $.LCmalloc_fail, %rdi
-    call printf@PLT
-    movq $1, %rax
-    leave
-    ret
-
-program_end:
-    movq $0, %rax
-    leave
-    ret
-
-# 比較兩個列表的函數
+	pushq %rbp
+	movq %rsp, %rbp
+	andq $-16, %rsp
+	movq $1, %rax
+	pushq %rax
+	movq $1, %rax
+	popq %rbx
+	cmpq %rbx, %rax
+	je .LC0
+	movq $0, %rax
+	jmp .LC1
+.LC0:
+	movq $1, %rax
+.LC1:
+	cmpq $1, %rax
+	jne .LC2
+	movq $.LCtrue, %rdi
+	jmp .LC3
+.LC2:
+	movq $.LCfalse, %rdi
+.LC3:
+	movq %rax, %rsi
+	movq $.LCs, %rdx
+	movq $0, %rax
+	call printf
+	movq $10, %rdi
+	call putchar
+	movq $0, %rax
+	leave
+	ret
+print_list:
+	pushq %r12
+	pushq %r14
+	pushq %r15
+	movq 0(%r12), %r15
+	xorq %r14, %r14
+print_list_loop:
+	cmpq %r14, %r15
+	je print_list_end
+	movq %r14, %rdx
+	imulq $8, %rdx
+	addq $8, %rdx
+	leaq 0(%r12), %rsi
+	addq %rdx, %rsi
+	movq 0(%rsi), %rax
+	movq %rax, %rsi
+	movq $.LCd, %rdi
+	call printf
+	addq $1, %r14
+	cmpq %r14, %r15
+	je print_list_end
+	movq $.LCcomma, %rdi
+	call printf
+	jmp print_list_loop
+print_list_end:
+	movq $.LCend, %rdi
+	call printf
+	movq $10, %rdi
+	call putchar
+	movq $0, %rax
+	popq %r15
+	popq %r14
+	popq %r12
+	ret
 compare_lists:
-    pushq %rbp
-    movq %rsp, %rbp
-
-    # 打印調試信息，確認參數是否正確
-    movq %rdi, %rsi
-    movq $.LCdebug_rdi, %rdi
-    call printf@PLT
-
-    movq %rsi, %rdi
-    movq $.LCdebug_rsi, %rdi
-    call printf@PLT
-
-    # 獲取列表長度並比較
-    movq 0(%rdi), %rax          # 獲取第一個列表的長度
-    movq 0(%rsi), %rbx          # 獲取第二個列表的長度
-    cmpq %rax, %rbx             # 比較長度
-    jne not_equal               # 如果長度不同，跳轉到 not_equal
-
-    # 長度相同，逐元素比較
-    movq $0, %rcx               # 初始化索引
+	pushq %rbp
+	movq %rsp, %rbp
+	movq 16(%rbp), %rdi
+	movq 24(%rbp), %rsi
+	movq 0(%rdi), %rax
+	movq 0(%rsi), %rbx
+	cmpq %rax, %rbx
+	jl list1_shorter
+	jg list2_shorter
+	movq $8, %rcx
+	jmp compare_loop
+list1_shorter:
+	movq $-1, %rax
+	jmp end_compare
+list2_shorter:
+	movq $1, %rax
+	jmp end_compare
 compare_loop:
-    cmpq %rcx, %rax             # 檢查是否到達列表末尾
-    jge equal                   # 如果所有元素相等，跳轉到 equal
-    movq 0(%rdi,%rcx,8), %rdx   # 獲取第一個列表的當前元素
-    movq 0(%rsi,%rcx,8), %r8    # 獲取第二個列表的當前元素
-    cmpq %rdx, %r8              # 比較兩個元素
-    jne not_equal               # 如果元素不相等，跳轉到 not_equal
-    addq $1, %rcx               # 索引加 1
-    jmp compare_loop            # 跳轉到下一次比較
-
-not_equal:
-    movq $1, %rax               # 返回 1 表示不相等
-    leave
-    ret
-
-equal:
-    xorq %rax, %rax             # 返回 0 表示相等
-    leave
-    ret
-
-.data
-.LCmalloc_fail:
-    .string "Memory allocation failed!\n"
+	cmpq %rcx, %rax
+	jge end_compare
+	movq 0(%rdi,%rcx,8), %rdx
+	movq 0(%rsi,%rcx,8), %r8
+	cmpq %rdx, %r8
+	jl list1_smaller
+	jg list2_smaller
+	addq $8, %rcx
+	jmp compare_loop
+list1_smaller:
+	movq $-1, %rax
+	jmp end_compare
+list2_smaller:
+	movq $1, %rax
+	jmp end_compare
+end_compare:
+	leave
+	ret
+	.data
 .LCtrue:
-    .string "True\n"
+	.string "True"
 .LCfalse:
-    .string "False\n"
-.LCdebug_rdi:
-    .string "RDI address: %p\n"
-.LCdebug_rsi:
-    .string "RSI address: %p\n"
+	.string "False"
+.LCs:
+	.string "%s"
+.LCd:
+	.string "%d"
+.LCcomma:
+	.string ", "
+.LCstart:
+	.string "["
+.LCend:
+	.string "]"

@@ -189,6 +189,32 @@ let rec generate_expr expr =
                   label end_label
                 in
                  code
+            | TEcst (Cstring _), TEcst (Cstring _) ->
+                let compare_label = fresh_unique_label () in
+                let end_label = fresh_unique_label () in
+                let strcmp_code =
+                  left_code ++
+                  movq (!%rdi) (!%rcx) ++  (* 将左字符串的地址存入 %rdi *)
+                  right_code ++
+                  movq (!%rdi) (!%rsi) ++  (* 将右字符串的地址存入 %rsi *)
+                  movq (!%rcx) (!%rdi) ++
+                  call "strcmp" ++
+                  cmpq (imm 0) (!%rax) ++  (* 根据 strcmp 的返回值判断 *)
+                  (match op with
+                  | Beq -> je compare_label
+                  | Bneq -> jne compare_label
+                  | Blt -> jg compare_label
+                  | Ble -> jle compare_label
+                  | Bgt -> jl compare_label
+                  | Bge -> jge compare_label
+                  | _ -> nop) ++
+                  movq (imm 0) (!%rax) ++
+                  jmp end_label ++
+                  label compare_label ++
+                  movq (imm 1) (!%rax) ++
+                  label end_label
+                in
+                strcmp_code
             | _ ->  (* 其他类型的比较 *)
                 let set_rax_to_1_label = fresh_unique_label () in
                 let end_label = fresh_unique_label () in
