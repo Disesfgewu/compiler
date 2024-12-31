@@ -3,6 +3,16 @@
 main:
 	pushq %rbp
 	movq %rsp, %rbp
+	movq $42, %rax
+	movq %rax, -16(%rbp)
+	movq -16(%rbp), %rax
+	movq %rax, %rsi
+	movq $.LCd, %rdi
+	movq $0, %rax
+	call printf
+	movq $10, %rdi
+	call putchar
+	movq -16(%rbp), %r10
 	movq $32, %rdi
 	call malloc@PLT
 	movq %rax, %r12
@@ -14,25 +24,41 @@ main:
 	movq $3, %rax
 	movq %rax, 24(%r12)
 	movq %r12, %rax
-	movq %rax, %r15
-	movq %r15, %r12
 	movq %rax, %r12
+	pushq %r12
+	movq 0(%r12), %r13
+	imulq $8, %r13
+	addq $8, %r13
+	movq %r13, %rdi
+	call malloc@PLT
+	movq %rax, %r14
+	movq 0(%r12), %rax
+	movq %rax, 0(%r14)
+	xorq %r15, %r15
+copy_list_loop:
+	cmpq 0(%r12), %r15
+	je copy_list_end
+	movq %r15, %rdx
+	imulq $8, %rdx
+	addq $8, %rdx
+	movq 0(%r12,%rdx,1), %rax
+	movq %rax, 0(%r14,%rdx,1)
+	addq $1, %r15
+	jmp copy_list_loop
+copy_list_end:
+	popq %r12
 	xorq %r13, %r13
 .LC0:
-	cmpq 0(%r12), %r13
+	cmpq 0(%r14), %r13
 	je .LC1
 	movq %r13, %rdx
 	imulq $8, %rdx
 	addq $8, %rdx
-	movq 0(%r12,%rdx,1), %rax
-	movq %rax, -24(%rbp)
-	movq $8, %rdi
-	call malloc@PLT
-	movq %rax, %r12
-	movq $0, 0(%r12)
-	movq %r12, %rax
-	movq %rax, %r15
-	movq -24(%rbp), %rax
+	movq 0(%r14,%rdx,1), %rax
+	movq %rax, -16(%rbp)
+	movq %rax, %r9
+	movq -16(%rbp), %rax
+	movq %r9, %rax
 	movq %rax, %rsi
 	movq $.LCd, %rdi
 	movq $0, %rax
@@ -42,12 +68,19 @@ main:
 	addq $1, %r13
 	jmp .LC0
 .LC1:
-	movq 0(%r12), %rdx
+	movq %r13, %rdx
 	subq $1, %rdx
 	imulq $8, %rdx
 	addq $8, %rdx
 	movq 0(%r12,%rdx,1), %rax
-	movq %rax, -24(%rbp)
+	movq %rax, -16(%rbp)
+	movq -16(%rbp), %rax
+	movq %rax, %rsi
+	movq $.LCd, %rdi
+	movq $0, %rax
+	call printf
+	movq $10, %rdi
+	call putchar
 	movq $0, %rax
 	leave
 	ret

@@ -1,4 +1,5 @@
-l = [1,2,3]
-for x in l:
-    l = []
+x = 42
+print(x)
+for x in [1,2,3]:
     print(x)
+print(x)

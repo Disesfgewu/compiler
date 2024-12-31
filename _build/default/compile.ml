@@ -55,7 +55,7 @@ let rec print_tstmt fmt stmt =
   | _ -> Format.fprintf fmt "Unsupported tstmt"
 
 (* 生成表达式的汇编代码 *)
-let rec generate_expr expr =
+let rec generate_expr ?(is_for=false) expr =
   match expr with
   | TEcst (Cint value) ->
       let code = movq (imm (Int64.to_int value)) (!%rax) in
@@ -90,7 +90,13 @@ let rec generate_expr expr =
       else (* 假设变量是一个列表 *)
         movq (!%r15) (!%r12)
     in
-    (nop, load_var)
+    let add_for = 
+      if is_for = true then
+        movq (!%r9) (!%rax)
+      else
+        nop
+    in
+    (nop, load_var ++ add_for )
   | TEunop (Unot, expr) ->
       let data, code = generate_expr expr in
       let op_code =
@@ -258,23 +264,21 @@ let rec generate_expr expr =
     (left_data ++ right_data, right_code ++ pushq (!%rax) ++ left_code ++ popq rbx ++ op_code)  
   | TElist elements ->
     let total_size = (List.length elements + 1) * 8 in
-    (* 為清單分配內存 *)
     let alloc_code =
-      movq (imm total_size) (!%rdi) ++
+      movq (imm total_size) (!%rdi) ++ (* 分配清單大小 *)
       call "malloc@PLT" ++
-      movq (!%rax) (!%r12) (* 保存分配的內存地址到 r12 *)
+      movq (!%rax) (!%r12) (* 保存清單基址 *)
     in
-    (* 初始化清單內容 *)
-    let init_data, init_code =
-      List.fold_left (fun (acc_data, acc_code) (idx, elem) ->
-        let data_elem, code_elem = generate_expr elem in
-        (acc_data ++ data_elem,
-          acc_code ++ code_elem ++ movq (!%rax) (ind ~ofs:(8 * (idx + 1)) r12))
-      ) (nop, nop) (List.mapi (fun idx elem -> (idx, elem)) elements)
+    let init_length = movq (imm (List.length elements)) (ind r12) in
+    let init_elements =
+      List.mapi (fun idx elem ->
+        let elem_data, elem_code = generate_expr elem in
+        elem_code ++
+        movq (!%rax) (ind ~ofs:(8 * (idx + 1)) r12) (* 初始化清單元素 *)
+      ) elements
+      |> List.fold_left (++) nop
     in
-    (* 初始化清單長度 *)
-    let size_code = movq (imm (List.length elements)) (ind r12) in
-      (init_data, alloc_code ++ size_code ++ init_code ++ movq (!%r12) (!%rax))
+    (nop, alloc_code ++ init_length ++ init_elements ++ movq (!%r12) (!%rax))
   | TEget (lst, idx) ->
     let lst_data, lst_code = generate_expr lst in
     let idx_data, idx_code = generate_expr idx in
@@ -298,10 +302,10 @@ let rec generate_expr expr =
   | _ -> failwith "Unsupported expression"
 
 (* 生成语句的汇编代码 *)
-let rec generate_stmt stmt =
+let rec generate_stmt ?(is_for=false) stmt =
   match stmt with
   | TSprint expr ->
-    let data_expr, code_expr = generate_expr expr in
+    let data_expr, code_expr = generate_expr ~is_for:is_for expr in
     let rec print_code expr depth =
       match expr with
       | TElist elements ->
@@ -426,7 +430,11 @@ let rec generate_stmt stmt =
         in
       (data, code ++ assign_code)
   | TSblock stmts ->
-      let datas, codes = List.split (List.map generate_stmt stmts) in
+    let datas, codes =
+      stmts
+      |> List.map (fun stmt -> generate_stmt ~is_for:is_for stmt)
+      |> List.split
+    in
       let data = List.fold_left (++) nop datas in
       let code = List.fold_left (++) nop codes in
       (data, code)
@@ -446,8 +454,6 @@ let rec generate_stmt stmt =
       else_code ++
       label end_label)
   | TSdef (fn, body) ->
-    (* 不直接產生在此處，而是讓外層整合 *)
-    (* 但為了避免錯誤，先回傳 (nop, nop) *)
     (nop, nop)
   
   | TSreturn expr ->
@@ -457,33 +463,66 @@ let rec generate_stmt stmt =
     let iter_data, iter_code = generate_expr iterable in
     let loop_start = fresh_unique_label () in
     let loop_end = fresh_unique_label () in
-    let body_data, body_code = generate_stmt body in
+    let body_data, body_code = generate_stmt ~is_for:true body in
+
+    let copy_list_code =
+      movq (!%rax) (!%r12) ++
+      pushq (!%r12) ++
+      movq (ind r12) (!%r13) ++
+      imulq (imm 8) (!%r13) ++
+      addq (imm 8) (!%r13) ++
+      movq (!%r13) (!%rdi) ++
+      call "malloc@PLT" ++
+      movq (!%rax) (!%r14) ++
+      movq (ind r12) (!%rax) ++
+      movq (!%rax) (ind r14) ++
+      xorq (!%r15) (!%r15) ++
+      label "copy_list_loop" ++
+      cmpq (ind r12) (!%r15) ++
+      je "copy_list_end" ++
+      movq (!%r15) (!%rdx) ++
+      imulq (imm 8) (!%rdx) ++
+      addq (imm 8) (!%rdx) ++
+      movq (ind ~index:rdx ~scale:1 r12) (!%rax) ++
+      movq (!%rax) (ind ~index:rdx ~scale:1 r14) ++
+      addq (imm 1) (!%r15) ++
+      jmp "copy_list_loop" ++
+      label "copy_list_end" ++
+      popq (r12)
+    in
+
     let loop_code =
       iter_code ++
-      movq (!%rax) (!%r12) ++ (* 保存迭代器基址到 r12 *)
-      xorq (!%r13) (!%r13) ++ (* 初始化循環計數器 r13 *)
+      copy_list_code ++
+      xorq (!%r13) (!%r13) ++
       label loop_start ++
-      cmpq (ind r12) (!%r13) ++ (* 比較計數器與清單長度 *)
-      je loop_end ++ (* 若超過長度則跳出 *)
-      movq (!%r13) (!%rdx) ++ (* 將計數器值從 r13 複製到 rdx *)
-      imulq (imm 8) (!%rdx) ++ (* 計算偏移量：索引 * 8 *)
-      addq (imm 8) (!%rdx) ++ (* 跳過清單長度欄位 *)
-      movq (ind ~index:rdx ~scale:1 r12) (!%rax) ++ (* 加載當前元素到 rax *)
-      movq (!%rax) (ind ~ofs:var.v_ofs rbp) ++ (* 存入循環變量的內存位置 *)
-      body_code ++ (* 執行循環體代碼 *)
-      addq (imm 1) (!%r13) ++ (* 計數器 +1 *)
+      cmpq (ind r14) (!%r13) ++
+      je loop_end ++
+      movq (!%r13) (!%rdx) ++
+      imulq (imm 8) (!%rdx) ++
+      addq (imm 8) (!%rdx) ++
+      movq (ind ~index:rdx ~scale:1 r14) (!%rax) ++
+      movq (!%rax) (ind ~ofs:var.v_ofs rbp) ++
+      movq (!%rax) (!%r9) ++
+      body_code ++
+      addq (imm 1) (!%r13) ++
       jmp loop_start ++
-      label loop_end ++
-      (* 循環結束後更新全局變量 *)
-      movq (ind r12) (!%rdx) ++ (* 加載清單長度到 rdx *)
-      subq (imm 1) (!%rdx) ++ (* 長度減 1 -> 最後一個索引 *)
-      imulq (imm 8) (!%rdx) ++ (* 計算偏移量 *)
-      addq (imm 8) (!%rdx) ++ (* 跳過清單長度欄位 *)
-      movq (ind ~index:rdx ~scale:1 r12) (!%rax) ++ (* 加載清單最後一個元素 *)
-      movq (!%rax) (ind ~ofs:var.v_ofs rbp) (* 更新全局變量地址 *)
+      label loop_end
     in
-    (iter_data ++ body_data, loop_code)
-      
+    let save_global_var =
+      movq (ind ~ofs:var.v_ofs rbp) (!%r10)  (* 保存全域變量值到 r10 *)
+    in
+    (* 在循環結束後，將最後一個值更新到全域變量 *)
+    let update_global_var =
+      movq (!%r13) (!%rdx) ++ (* 使用計數器值 r13 計算偏移量 *)
+      subq (imm 1) (!%rdx) ++ (* 計算最後一個元素索引 *)
+      imulq (imm 8) (!%rdx) ++
+      addq (imm 8) (!%rdx) ++
+      movq (ind ~index:rdx ~scale:1 r12) (!%rax) ++ (* 加載清單的最後一個元素到 rax *)
+      movq (!%rax) (ind ~ofs:var.v_ofs rbp)  (* 更新全域變量地址 *)
+    in
+
+    (iter_data ++ body_data, save_global_var ++ loop_code  ++ update_global_var)    
   | _ ->
     if !debug then Format.printf "Unsupported statement: %a@." print_tstmt stmt;
     failwith "Unsupported statement" 
