@@ -105,12 +105,30 @@ let rec check_expr (e : expr) : texpr =
       let te1 = check_expr e1 in
       let te2 = check_expr e2 in
       TEbinop (op, te1, te2)
+      | Ecall (id, args) when id.id = "range" ->
+        if List.length args <> 1 then
+          error ~loc:id.loc "Function 'range' expects exactly 1 argument.";
+        let t_arg = check_expr (List.hd args) in
+        if not (is_int_type t_arg) then
+          error ~loc:id.loc "Function 'range' expects an integer argument.";
+        (match t_arg with
+        | TEcst (Cint n) ->
+            let elements = List.init (Int64.to_int n) (fun i -> TEcst (Cint (Int64.of_int i))) in
+            TElist elements
+        | _ -> error "Dynamic range generation not supported.")
+  | Ecall (id, args) when id.id = "list" ->
+      if List.length args <> 1 then
+        error ~loc:id.loc "Function 'list' expects exactly 1 argument.";
+      let t_arg = check_expr (List.hd args) in
+      (match t_arg with
+      | TElist _ -> t_arg
+      | _ -> error ~loc:id.loc "Function 'list' expects a range as its argument.")
   | Ecall (id, args) ->
-    if not (Hashtbl.mem function_table id.id) then
-      error ~loc:id.loc "Undefined function: %s" id.id;
-    let fn = Hashtbl.find function_table id.id in
-    let targs = List.map check_expr args in
-    TEcall (fn, targs)    
+      if not (Hashtbl.mem function_table id.id) then
+        error ~loc:id.loc "Undefined function: %s" id.id;
+      let fn = Hashtbl.find function_table id.id in
+      let targs = List.map check_expr args in
+      TEcall (fn, targs)  
   | _ -> 
     Format.printf "Expression not supported: %a@." print_expr e;  
     error "Unsupported expression"

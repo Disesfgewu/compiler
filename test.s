@@ -5,6 +5,12 @@ main:
 	movq %rsp, %rbp
 	movq $.LCstart, %rdi
 	call printf
+	movq $0, %rax
+	movq %rax, %rsi
+	movq $.LCd, %rdi
+	call printf
+	movq $.LCcomma, %rdi
+	call printf
 	movq $1, %rax
 	movq %rax, %rsi
 	movq $.LCd, %rdi
@@ -18,6 +24,12 @@ main:
 	movq $.LCcomma, %rdi
 	call printf
 	movq $3, %rax
+	movq %rax, %rsi
+	movq $.LCd, %rdi
+	call printf
+	movq $.LCcomma, %rdi
+	call printf
+	movq $4, %rax
 	movq %rax, %rsi
 	movq $.LCd, %rdi
 	call printf
