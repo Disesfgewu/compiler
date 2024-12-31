@@ -1,5 +1,6 @@
-x = 42
-print(x)
-for x in [1,2,3]:
+def loop(x):
     print(x)
-print(x)
+    if x < 3: loop(x+1)
+
+loop(0)
+

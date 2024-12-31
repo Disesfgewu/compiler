@@ -523,6 +523,10 @@ let rec generate_stmt ?(is_for=false) stmt =
     in
 
     (iter_data ++ body_data, save_global_var ++ loop_code  ++ update_global_var)    
+  | TSeval expr -> 
+      (* 新增對 TSeval 的支援 *)
+      let data_expr, code_expr = generate_expr expr in
+      (data_expr, code_expr)
   | _ ->
     if !debug then Format.printf "Unsupported statement: %a@." print_tstmt stmt;
     failwith "Unsupported statement" 

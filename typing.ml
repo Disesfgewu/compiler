@@ -83,15 +83,14 @@ let rec check_expr (e : expr) : texpr =
   | Ecst (Cstring s) -> TEcst (Cstring s)
   | Ecst (Cint i) -> TEcst (Cint i)  (* 常量直接類型化 *)
   | Ecst (Cbool b) -> TEcst (Cbool b)
+  | Ecst Cnone -> TEcst Cnone (* 新增對 None 常量的處理 *)
   | Elist elements ->
-    (* Format.printf "Typing Elist: %a@." 
-      (Format.pp_print_list print_expr) elements; *)
-    let t_elements = List.map check_expr elements in
-    TElist t_elements
+      let t_elements = List.map check_expr elements in
+      TElist t_elements
   | Eget (e1, e2) -> 
-    let t_e1 = check_expr e1 in
-    let t_e2 = check_expr e2 in
-    TEget (t_e1, t_e2)
+      let t_e1 = check_expr e1 in
+      let t_e2 = check_expr e2 in
+      TEget (t_e1, t_e2)
   | Eident id ->
       if Hashtbl.mem symbol_table id.id then
         TEvar (Hashtbl.find symbol_table id.id)  (* 使用符號表中變量信息 *)
@@ -101,57 +100,62 @@ let rec check_expr (e : expr) : texpr =
       let te = check_expr e in
       if is_bool_type te then TEunop (Unot, te)
       else error "not operation only supports boolean expressions"
+  | Eunop (Uneg, e) ->  (* 新增負號運算的處理 *)
+      let te = check_expr e in
+      if is_int_type te then TEunop (Uneg, te)
+      else error "negation operation only supports integer expressions"
   | Ecall (id, args) when id.id = "len" ->
-    if List.length args <> 1 then
-      error ~loc:id.loc "Function 'len' expects exactly 1 argument.";
-    let t_arg = check_expr (List.hd args) in
-    (match t_arg with
-    | TElist elements ->
-        TEcst (Cint (Int64.of_int (List.length elements))) (* 返回清單長度 *)
-    | TEcst (Cint _) | TEcst (Cbool _) | TEcst (Cstring _) ->
-        TEcst (Cint (Int64.of_int 1))
-    | _ -> error ~loc:id.loc "Function 'len' expects a list as its argument.")
+      if List.length args <> 1 then
+        error ~loc:id.loc "Function 'len' expects exactly 1 argument.";
+      let t_arg = check_expr (List.hd args) in
+      (match t_arg with
+      | TElist elements ->
+          TEcst (Cint (Int64.of_int (List.length elements))) (* 返回清單長度 *)
+      | TEcst (Cint _) | TEcst (Cbool _) | TEcst (Cstring _) ->
+          TEcst (Cint (Int64.of_int 1))
+      | _ -> error ~loc:id.loc "Function 'len' expects a list as its argument.")
   | Ebinop (op, e1, e2) ->  (* 二元運算符 *)
       let te1 = check_expr e1 in
       let te2 = check_expr e2 in
       TEbinop (op, te1, te2)
-      | Ecall (id, args) when id.id = "range" ->
-        if List.length args <> 1 then
-          error ~loc:id.loc "Function 'range' expects exactly 1 argument.";
-        let t_arg = check_expr (List.hd args) in
-        if not (is_int_type t_arg) then
-          error ~loc:id.loc "Function 'range' expects an integer argument.";
-        (match t_arg with
-        | TEcst (Cint n) ->
-            let elements = List.init (Int64.to_int n) (fun i -> TEcst (Cint (Int64.of_int i))) in
-            TElist elements
-        | _ -> error "Dynamic range generation not supported.")
+  | Ecall (id, args) when id.id = "range" ->
+      if List.length args <> 1 then
+        error ~loc:id.loc "Function 'range' expects exactly 1 argument.";
+      let t_arg = check_expr (List.hd args) in
+      if not (is_int_type t_arg) then
+        error ~loc:id.loc "Function 'range' expects an integer argument.";
+      (match t_arg with
+      | TEcst (Cint n) ->
+          let elements = List.init (Int64.to_int n) (fun i -> TEcst (Cint (Int64.of_int i))) in
+          TElist elements
+      | _ -> error "Dynamic range generation not supported.")
   | Ecall (id, args) when id.id = "list" ->
-    if List.length args <> 1 then
-      error ~loc:id.loc "Function 'list' expects exactly 1 argument.";
-    let arg = List.hd args in
-    match arg with
-    | Ecall (range_id, range_args) when range_id.id = "range" ->
-        if List.length range_args <> 1 then
-          error ~loc:range_id.loc "Function 'range' expects exactly 1 argument.";
-        let t_arg = check_expr (List.hd range_args) in
-        if not (is_int_type t_arg) then
-          error ~loc:range_id.loc "Function 'range' expects an integer argument.";
-        (match t_arg with
-        | TEcst (Cint n) ->
-            let elements = List.init (Int64.to_int n) (fun i -> TEcst (Cint (Int64.of_int i))) in
-            TElist elements
-        | _ -> error "Dynamic range generation not supported.")
-    | _ -> error ~loc:id.loc "Function 'list' expects a range as its argument."      
+      if List.length args <> 1 then
+        error ~loc:id.loc "Function 'list' expects exactly 1 argument.";
+      let arg = List.hd args in
+      (match arg with
+      | Ecall (range_id, range_args) when range_id.id = "range" ->
+          if List.length range_args <> 1 then
+            error ~loc:range_id.loc "Function 'range' expects exactly 1 argument.";
+          let t_arg = check_expr (List.hd range_args) in
+          if not (is_int_type t_arg) then
+            error ~loc:range_id.loc "Function 'range' expects an integer argument.";
+          (match t_arg with
+          | TEcst (Cint n) ->
+              let elements = List.init (Int64.to_int n) (fun i -> TEcst (Cint (Int64.of_int i))) in
+              TElist elements
+          | _ -> error "Dynamic range generation not supported.")
+      | _ -> error ~loc:id.loc "Function 'list' expects a range as its argument.")
   | Ecall (id, args) ->
-      if not (Hashtbl.mem function_table id.id) then
-        error ~loc:id.loc "Undefined function: %s" id.id;
-      let fn = Hashtbl.find function_table id.id in
-      let targs = List.map check_expr args in
-      TEcall (fn, targs)  
-  | _ -> 
-    Format.printf "Expression not supported: %a@." print_expr e;  
-    error "Unsupported expression"
+    if not (Hashtbl.mem function_table id.id) then
+      error ~loc:id.loc "Undefined function: %s" id.id;
+    let fn = Hashtbl.find function_table id.id in
+    let targs = List.map check_expr args in
+    TEcall (fn, targs)
+  | _ ->
+      Format.printf "Expression not supported: %a@." print_expr e;
+      error "Unsupported expression"
+
 
 (* 類型檢查語句 *)
 let rec check_stmt (s : stmt) : tstmt =
@@ -192,33 +196,19 @@ let rec check_stmt (s : stmt) : tstmt =
       TSif (tcond, tthen, telse)
   | Sblock stmts -> TSblock (List.map check_stmt stmts)  (* 支持代碼塊 *)
   | Sdef (id, params, body) ->
-      (* 定義函數參數的符號表 *)
-      let fn_params = 
-        List.mapi (fun i param ->
-          let param_var = { v_name = param.id; v_ofs = 8 * (i + 2); v_type = Tint } in
-          Hashtbl.add symbol_table param.id param_var;
-          param_var
-        ) params
-      in
-      (* 檢查函數體 *)
-      let tbody = check_stmt body in
-      (* 返回類型化的函數定義 *)
-      TSdef ({ fn_name = id.id; fn_params }, tbody)
-  | Sdef (id, params, body) ->
-      if Hashtbl.mem function_table id.id then
-        error ~loc:id.loc "Function already defined: %s" id.id;
-      (* 建立函式參數 *)
-      let fn_params =
-        List.mapi (fun i param ->
-          let param_var = { v_name = param.id; v_ofs = 8 * (i + 2); v_type = Tint } in
-          Hashtbl.add symbol_table param.id param_var;
-          param_var
-        ) params
-      in
-      let tbody = check_stmt body in
-      let fn = { fn_name = id.id; fn_params } in
-      Hashtbl.add function_table id.id fn;
-      TSdef (fn, tbody)
+    if Hashtbl.mem function_table id.id then
+      error ~loc:id.loc "Function already defined: %s" id.id;
+    let fn_params =
+      List.mapi (fun i param ->
+        let param_var = { v_name = param.id; v_ofs = 8 * (i + 2); v_type = Tint } in
+        Hashtbl.add symbol_table param.id param_var;
+        param_var
+      ) params
+    in
+    let tbody = check_stmt body in
+    let fn = { fn_name = id.id; fn_params } in
+    Hashtbl.add function_table id.id fn;
+    TSdef (fn, tbody)
   | Sreturn expr ->
       let texpr = check_expr expr in
       TSreturn texpr
@@ -255,31 +245,44 @@ let rec check_stmt (s : stmt) : tstmt =
     let t_body = check_stmt body in
 
     (* 返回類型化的 for 循環 *)
-    TSfor (var, t_iterable, t_body)    
+    TSfor (var, t_iterable, t_body)   
+  | Seval expr -> 
+    let texpr = check_expr expr in
+    (match texpr with
+    | TEcall (fn, _) -> TSeval texpr
+    | _ -> error "Only function calls are allowed in evaluation statements")
+  | Sset (e1, e2, e3) ->
+    let te1 = check_expr e1 in
+    let te2 = check_expr e2 in
+    let te3 = check_expr e3 in
+    TSset (te1, te2, te3)
   | _ -> error "Unsupported statement"
 
-let check_def (id, params, body) : tdef =
-  (* 檢查函數是否已定義 *)
-  if Hashtbl.mem function_table id.id then
-    error ~loc:id.loc "Function already defined: %s" id.id;
+  let check_def (id, params, body) : tdef =
+    (* 檢查函數是否已定義 *)
+    if Hashtbl.mem function_table id.id then
+      error ~loc:id.loc "Function already defined: %s" id.id;
+  
+    (* 定義函數參數 *)
+    let fn_params =
+      List.mapi (fun i param ->
+        let param_var = { v_name = param.id; v_type = Tint; v_ofs = 8 * (i + 2) } in
+        Hashtbl.add symbol_table param.id param_var;
+        param_var
+      ) params
+    in
+  
+    (* 創建函數記錄並立即添加到符號表，支持遞迴調用 *)
+    let fn = { fn_name = id.id; fn_params } in
+    Hashtbl.add function_table id.id fn;
+  
+    (* 檢查函數體 *)
+    let tbody = check_stmt body in
+  
+    (* 返回類型化的函數定義 *)
+    (fn, tbody)
+  
 
-  (* 定義函數參數 *)
-  let fn_params =
-    List.mapi (fun i param ->
-      let param_var = { v_name = param.id; v_ofs = 8 * (i + 2); v_type = Tint } in
-      Hashtbl.add symbol_table param.id param_var;
-      param_var
-    ) params
-  in
-
-  (* 檢查函數體 *)
-  let tbody = check_stmt body in
-
-  (* 創建函數記錄並添加到函數符號表 *)
-  let fn = { fn_name = id.id; fn_params } in
-  Hashtbl.add function_table id.id fn;
-
-  (fn, tbody)
 let initialize () =
   (* 初始化內建函數 len *)
   Hashtbl.add function_table "len" {

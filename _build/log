@@ -13,4 +13,35 @@
 #  ; build_dir = In_build_dir "default"
 #  ; instrument_with = []
 #  }
-$ /usr/bin/ocamlc.opt -config > /tmp/dune_c20123_output
+$ /usr/bin/ocamlc.opt -config > /tmp/dune_2bdcf8_output
+$ (cd _build/default && /usr/bin/ocamldep.opt -modules -impl compile.ml) > _build/default/.minipython.eobjs/compile.impl.d
+$ (cd _build/default && /usr/bin/ocamlc.opt -g -bin-annot -I .minipython.eobjs/byte -no-alias-deps -opaque -o .minipython.eobjs/byte/compile.cmo -c -impl compile.ml)
+> File "compile.ml", line 262, characters 8-9:
+> 262 |       | _ -> failwith "Unsupported operator"
+>               ^
+> Warning 11: this match case is unused.
+> File "compile.ml", line 358, characters 23-78:
+> 358 |             | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> true
+>                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> Warning 26: unused variable op.
+> File "compile.ml", line 405, characters 23-78:
+> 405 |             | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> movq (ilab format_label) (!%rdx)
+>                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> Warning 26: unused variable op.
+$ (cd _build/default && /usr/bin/ocamlc.opt -g -bin-annot -I .minipython.eobjs/byte -no-alias-deps -opaque -o .minipython.eobjs/byte/minipython.cmo -c -impl minipython.ml)
+$ (cd _build/default && /usr/bin/ocamlopt.opt -g -I .minipython.eobjs/byte -I .minipython.eobjs/native -intf-suffix .ml -no-alias-deps -opaque -o .minipython.eobjs/native/minipython.cmx -c -impl minipython.ml)
+$ (cd _build/default && /usr/bin/ocamlopt.opt -g -I .minipython.eobjs/byte -I .minipython.eobjs/native -intf-suffix .ml -no-alias-deps -opaque -o .minipython.eobjs/native/compile.cmx -c -impl compile.ml)
+> File "compile.ml", line 262, characters 8-9:
+> 262 |       | _ -> failwith "Unsupported operator"
+>               ^
+> Warning 11: this match case is unused.
+> File "compile.ml", line 358, characters 23-78:
+> 358 |             | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> true
+>                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> Warning 26: unused variable op.
+> File "compile.ml", line 405, characters 23-78:
+> 405 |             | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> movq (ilab format_label) (!%rdx)
+>                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> Warning 26: unused variable op.
+$ (cd _build/default && /usr/bin/ocamlopt.opt -g -o minipython.exe /usr/lib/ocaml/str.cmxa -I /usr/lib/ocaml .minipython.eobjs/native/ast.cmx .minipython.eobjs/native/x86_64.cmx .minipython.eobjs/native/compile.cmx .minipython.eobjs/native/parser.cmx .minipython.eobjs/native/lexer.cmx .minipython.eobjs/native/typing.cmx .minipython.eobjs/native/minipython.cmx)
+# Promoting "_build/default/minipython.exe" to "minipython.exe"
