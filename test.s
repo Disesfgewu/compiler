@@ -3,37 +3,31 @@
 main:
 	pushq %rbp
 	movq %rsp, %rbp
-	movq $.LCstart, %rdi
-	call printf
-	movq $0, %rax
-	movq %rax, %rsi
-	movq $.LCd, %rdi
-	call printf
-	movq $.LCcomma, %rdi
-	call printf
 	movq $1, %rax
-	movq %rax, %rsi
-	movq $.LCd, %rdi
-	call printf
-	movq $.LCcomma, %rdi
-	call printf
+	pushq %rax
 	movq $2, %rax
+	pushq %rax
+	movq $1, %rax
+	popq %rbx
+	cmpq %rbx, %rax
+	jg .LC0
+	movq $0, %rax
+	jmp .LC1
+.LC0:
+	movq $1, %rax
+.LC1:
+	popq %rbx
+	andq %rbx, %rax
+	cmpq $1, %rax
+	jne .LC2
+	movq $.LCtrue, %rdi
+	jmp .LC3
+.LC2:
+	movq $.LCfalse, %rdi
+.LC3:
 	movq %rax, %rsi
-	movq $.LCd, %rdi
-	call printf
-	movq $.LCcomma, %rdi
-	call printf
-	movq $3, %rax
-	movq %rax, %rsi
-	movq $.LCd, %rdi
-	call printf
-	movq $.LCcomma, %rdi
-	call printf
-	movq $4, %rax
-	movq %rax, %rsi
-	movq $.LCd, %rdi
-	call printf
-	movq $.LCend, %rdi
+	movq $.LCs, %rdx
+	movq $0, %rax
 	call printf
 	movq $10, %rdi
 	call putchar

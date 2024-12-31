@@ -1,1 +1,1 @@
-print(list(range(5)))
+print(1>2 and len(1))
