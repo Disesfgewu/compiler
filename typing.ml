@@ -127,12 +127,22 @@ let rec check_expr (e : expr) : texpr =
             TElist elements
         | _ -> error "Dynamic range generation not supported.")
   | Ecall (id, args) when id.id = "list" ->
-      if List.length args <> 1 then
-        error ~loc:id.loc "Function 'list' expects exactly 1 argument.";
-      let t_arg = check_expr (List.hd args) in
-      (match t_arg with
-      | TElist _ -> t_arg
-      | _ -> error ~loc:id.loc "Function 'list' expects a range as its argument.")
+    if List.length args <> 1 then
+      error ~loc:id.loc "Function 'list' expects exactly 1 argument.";
+    let arg = List.hd args in
+    match arg with
+    | Ecall (range_id, range_args) when range_id.id = "range" ->
+        if List.length range_args <> 1 then
+          error ~loc:range_id.loc "Function 'range' expects exactly 1 argument.";
+        let t_arg = check_expr (List.hd range_args) in
+        if not (is_int_type t_arg) then
+          error ~loc:range_id.loc "Function 'range' expects an integer argument.";
+        (match t_arg with
+        | TEcst (Cint n) ->
+            let elements = List.init (Int64.to_int n) (fun i -> TEcst (Cint (Int64.of_int i))) in
+            TElist elements
+        | _ -> error "Dynamic range generation not supported.")
+    | _ -> error ~loc:id.loc "Function 'list' expects a range as its argument."      
   | Ecall (id, args) ->
       if not (Hashtbl.mem function_table id.id) then
         error ~loc:id.loc "Undefined function: %s" id.id;
@@ -212,6 +222,40 @@ let rec check_stmt (s : stmt) : tstmt =
   | Sreturn expr ->
       let texpr = check_expr expr in
       TSreturn texpr
+  | Sfor (id, iterable, body) ->
+    (* 類型化迭代器 *)
+    let t_iterable = check_expr iterable in
+    let var_type =
+      match t_iterable with
+      | TElist elements ->
+          (match elements with
+          | TEcst (Cint _) :: _ -> Tint
+          | TEcst (Cbool _) :: _ -> Tbool
+          | TEcst (Cstring _) :: _ -> Tstring
+          | _ -> Tint)
+      | TEcall (fn, _) when fn.fn_name = "range" ->
+          Tint
+      | TEvar var when var.v_type = Tnone ->
+          Tint
+      | _ -> error ~loc:id.loc "Unsupported iterable in for loop"
+    in
+
+    (* 暫時允許覆蓋全局變量 *)
+    let var =
+      if Hashtbl.mem symbol_table id.id then
+        Hashtbl.find symbol_table id.id
+      else
+        let new_var = { v_name = id.id; v_ofs = !current_offset; v_type = var_type } in
+        Hashtbl.add symbol_table id.id new_var;
+        current_offset := !current_offset - 8;
+        new_var
+    in
+
+    (* 類型化循環體 *)
+    let t_body = check_stmt body in
+
+    (* 返回類型化的 for 循環 *)
+    TSfor (var, t_iterable, t_body)    
   | _ -> error "Unsupported statement"
 
 let check_def (id, params, body) : tdef =

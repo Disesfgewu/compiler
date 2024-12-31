@@ -1,1 +1,4 @@
-print(1>2 and len(1))
+l = [1,2,3]
+for x in l:
+    l = []
+    print(x)

@@ -76,11 +76,11 @@ let rec generate_expr expr =
       else
         label label_name ++ string s
     in
-    let code = movq (ilab label_name) (!%rdi) in
+    let code = movq (ilab label_name) (!%rdi) ++ movq (!%rdi) (!%rax) in
     (data, code)
-    | TEcst (Cbool b) ->
-      let code = movq (imm (if b then 1 else 0)) (!%rax) in
-      (nop, code)
+  | TEcst (Cbool b) ->
+    let code = movq (imm (if b then 1 else 0)) (!%rax) in
+    (nop, code)
   | TEvar var ->
     let load_var =
       if var.v_type = Tstring then
@@ -256,45 +256,45 @@ let rec generate_expr expr =
       | _ -> failwith "Unsupported operator"
     in
     (left_data ++ right_data, right_code ++ pushq (!%rax) ++ left_code ++ popq rbx ++ op_code)  
-    | TElist elements ->
-      let total_size = (List.length elements + 1) * 8 in
-      (* 為清單分配內存 *)
-      let alloc_code =
-        movq (imm total_size) (!%rdi) ++
-        call "malloc@PLT" ++
-        movq (!%rax) (!%r12) (* 保存分配的內存地址到 r12 *)
-      in
-      (* 初始化清單內容 *)
-      let init_data, init_code =
-        List.fold_left (fun (acc_data, acc_code) (idx, elem) ->
-          let data_elem, code_elem = generate_expr elem in
-          (acc_data ++ data_elem,
-           acc_code ++ code_elem ++ movq (!%rax) (ind ~ofs:(8 * (idx + 1)) r12))
-        ) (nop, nop) (List.mapi (fun idx elem -> (idx, elem)) elements)
-      in
-      (* 初始化清單長度 *)
-      let size_code = movq (imm (List.length elements)) (ind r12) in
+  | TElist elements ->
+    let total_size = (List.length elements + 1) * 8 in
+    (* 為清單分配內存 *)
+    let alloc_code =
+      movq (imm total_size) (!%rdi) ++
+      call "malloc@PLT" ++
+      movq (!%rax) (!%r12) (* 保存分配的內存地址到 r12 *)
+    in
+    (* 初始化清單內容 *)
+    let init_data, init_code =
+      List.fold_left (fun (acc_data, acc_code) (idx, elem) ->
+        let data_elem, code_elem = generate_expr elem in
+        (acc_data ++ data_elem,
+          acc_code ++ code_elem ++ movq (!%rax) (ind ~ofs:(8 * (idx + 1)) r12))
+      ) (nop, nop) (List.mapi (fun idx elem -> (idx, elem)) elements)
+    in
+    (* 初始化清單長度 *)
+    let size_code = movq (imm (List.length elements)) (ind r12) in
       (init_data, alloc_code ++ size_code ++ init_code ++ movq (!%r12) (!%rax))
-      | TEget (lst, idx) ->
-        let lst_data, lst_code = generate_expr lst in
-        let idx_data, idx_code = generate_expr idx in
-        let get_code =
-          (* 計算索引的偏移量 *)
-          idx_code ++
-          movq (!%rax) (!%rdx) ++
-          imulq (imm 8) (!%rdx) ++
-          addq (imm 8) (!%rdx) ++ (* 加 8 跳過 list 長度 *)
-          
-          (* 取得列表的起始地址 *)
-          lst_code ++
-          movq (!%rax) (!%rsi) ++
-    
-          (* 加載列表元素的值 *)
-          leaq (ind r12 ~index:rdx ~scale:1) (rsi) ++ 
-          addq (!%rdx) (!%rax) ++
-          movq (ind (rsi)) (!%rax)
-        in
-        (lst_data ++ idx_data, get_code)
+  | TEget (lst, idx) ->
+    let lst_data, lst_code = generate_expr lst in
+    let idx_data, idx_code = generate_expr idx in
+    let get_code =
+      (* 計算索引的偏移量 *)
+      idx_code ++
+      movq (!%rax) (!%rdx) ++
+      imulq (imm 8) (!%rdx) ++
+      addq (imm 8) (!%rdx) ++ (* 加 8 跳過 list 長度 *)
+      
+      (* 取得列表的起始地址 *)
+      lst_code ++
+      movq (!%rax) (!%rsi) ++
+
+      (* 加載列表元素的值 *)
+      leaq (ind r12 ~index:rdx ~scale:1) (rsi) ++ 
+      addq (!%rdx) (!%rax) ++
+      movq (ind (rsi)) (!%rax)
+    in
+    (lst_data ++ idx_data, get_code)
   | _ -> failwith "Unsupported expression"
 
 (* 生成语句的汇编代码 *)
@@ -359,6 +359,7 @@ let rec generate_stmt stmt =
           let involves_string =
             match expr with
             | TEcst (Cstring _) -> true
+            | TEvar var when var.v_type = Tstring -> true
             | TEbinop (Badd, TEcst (Cstring _), TEcst (Cstring _)) -> true
             | TEbinop (Badd, _, TEcst (Cstring _)) -> true
             | TEbinop (Badd, TEcst (Cstring _), _) -> true
@@ -396,6 +397,7 @@ let rec generate_stmt stmt =
           in
           let load_format_string = match expr with
             | TEcst (Cstring _) -> movq (ilab format_label) (!%rdx)
+            | TEvar var when var.v_type = Tstring -> movq (ilab format_label) (!%rdx)
             | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> movq (ilab format_label) (!%rdx)
             | TEcst (Cbool _) -> movq (ilab format_label) (!%rdx)
             | TEunop (Unot, _) -> movq (ilab format_label) (!%rdx)
@@ -451,6 +453,37 @@ let rec generate_stmt stmt =
   | TSreturn expr ->
       let d_expr, c_expr = generate_expr expr in
       (d_expr, c_expr ++ leave ++ ret)
+  | TSfor (var, iterable, body) ->
+    let iter_data, iter_code = generate_expr iterable in
+    let loop_start = fresh_unique_label () in
+    let loop_end = fresh_unique_label () in
+    let body_data, body_code = generate_stmt body in
+    let loop_code =
+      iter_code ++
+      movq (!%rax) (!%r12) ++ (* 保存迭代器基址到 r12 *)
+      xorq (!%r13) (!%r13) ++ (* 初始化循環計數器 r13 *)
+      label loop_start ++
+      cmpq (ind r12) (!%r13) ++ (* 比較計數器與清單長度 *)
+      je loop_end ++ (* 若超過長度則跳出 *)
+      movq (!%r13) (!%rdx) ++ (* 將計數器值從 r13 複製到 rdx *)
+      imulq (imm 8) (!%rdx) ++ (* 計算偏移量：索引 * 8 *)
+      addq (imm 8) (!%rdx) ++ (* 跳過清單長度欄位 *)
+      movq (ind ~index:rdx ~scale:1 r12) (!%rax) ++ (* 加載當前元素到 rax *)
+      movq (!%rax) (ind ~ofs:var.v_ofs rbp) ++ (* 存入循環變量的內存位置 *)
+      body_code ++ (* 執行循環體代碼 *)
+      addq (imm 1) (!%r13) ++ (* 計數器 +1 *)
+      jmp loop_start ++
+      label loop_end ++
+      (* 循環結束後更新全局變量 *)
+      movq (ind r12) (!%rdx) ++ (* 加載清單長度到 rdx *)
+      subq (imm 1) (!%rdx) ++ (* 長度減 1 -> 最後一個索引 *)
+      imulq (imm 8) (!%rdx) ++ (* 計算偏移量 *)
+      addq (imm 8) (!%rdx) ++ (* 跳過清單長度欄位 *)
+      movq (ind ~index:rdx ~scale:1 r12) (!%rax) ++ (* 加載清單最後一個元素 *)
+      movq (!%rax) (ind ~ofs:var.v_ofs rbp) (* 更新全局變量地址 *)
+    in
+    (iter_data ++ body_data, loop_code)
+      
   | _ ->
     if !debug then Format.printf "Unsupported statement: %a@." print_tstmt stmt;
     failwith "Unsupported statement" 
