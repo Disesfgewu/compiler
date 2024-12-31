@@ -3,34 +3,25 @@
 main:
 	pushq %rbp
 	movq %rsp, %rbp
-	andq $-16, %rsp
-	movq $.LC1, %rdi
-	pushq %rax
-	movq $.LC0, %rdi
-	popq %rbx
-	movq $.LC0, %rdi
-	movq %rdi, %rcx
-	movq $.LC1, %rdi
-	movq %rdi, %rsi
-	movq %rcx, %rdi
-	call strcmp
-	cmpq $0, %rax
-	jg .LC2
-	movq $0, %rax
-	jmp .LC3
-.LC2:
+	movq $.LCstart, %rdi
+	call printf
 	movq $1, %rax
-.LC3:
-	cmpq $1, %rax
-	jne .LC4
-	movq $.LCtrue, %rdi
-	jmp .LC5
-.LC4:
-	movq $.LCfalse, %rdi
-.LC5:
 	movq %rax, %rsi
-	movq $.LCs, %rdx
-	movq $0, %rax
+	movq $.LCd, %rdi
+	call printf
+	movq $.LCcomma, %rdi
+	call printf
+	movq $2, %rax
+	movq %rax, %rsi
+	movq $.LCd, %rdi
+	call printf
+	movq $.LCcomma, %rdi
+	call printf
+	movq $3, %rax
+	movq %rax, %rsi
+	movq $.LCd, %rdi
+	call printf
+	movq $.LCend, %rdi
 	call printf
 	movq $10, %rdi
 	call putchar
@@ -49,8 +40,7 @@ print_list_loop:
 	movq %r14, %rdx
 	imulq $8, %rdx
 	addq $8, %rdx
-	leaq 0(%r12), %rsi
-	addq %rdx, %rsi
+	leaq 0(%r12,%rdx,1), %rsi
 	movq 0(%rsi), %rax
 	movq %rax, %rsi
 	movq $.LCd, %rdi
@@ -71,48 +61,7 @@ print_list_end:
 	popq %r14
 	popq %r12
 	ret
-compare_lists:
-	pushq %rbp
-	movq %rsp, %rbp
-	movq 16(%rbp), %rdi
-	movq 24(%rbp), %rsi
-	movq 0(%rdi), %rax
-	movq 0(%rsi), %rbx
-	cmpq %rax, %rbx
-	jl list1_shorter
-	jg list2_shorter
-	movq $8, %rcx
-	jmp compare_loop
-list1_shorter:
-	movq $-1, %rax
-	jmp end_compare
-list2_shorter:
-	movq $1, %rax
-	jmp end_compare
-compare_loop:
-	cmpq %rcx, %rax
-	jge end_compare
-	movq 0(%rdi,%rcx,8), %rdx
-	movq 0(%rsi,%rcx,8), %r8
-	cmpq %rdx, %r8
-	jl list1_smaller
-	jg list2_smaller
-	addq $8, %rcx
-	jmp compare_loop
-list1_smaller:
-	movq $-1, %rax
-	jmp end_compare
-list2_smaller:
-	movq $1, %rax
-	jmp end_compare
-end_compare:
-	leave
-	ret
 	.data
-.LC0:
-	.string ""
-.LC1:
-	.string "a"
 .LCtrue:
 	.string "True"
 .LCfalse:

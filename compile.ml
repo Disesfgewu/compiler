@@ -123,7 +123,26 @@ let rec generate_expr expr =
       | _ ->
           failwith "len() only supports string or integer types"
     in
-    (arg_data, len_code)    
+    (arg_data, len_code)
+  | TEcall (fn, args) ->
+    (* 收集 args 的 code，依序 push，最後 call fn.fn_name *)
+    let (data_args, code_args) =
+      List.fold_left (fun (acc_data, acc_code) arg ->
+        let d, c = generate_expr arg in
+        (* 參數算好 -> 存在 %rax -> pushq %rax *)
+        (acc_data ++ d, acc_code ++ c ++ pushq (!%rax))
+      ) (nop, nop) (List.rev args)
+      (* 因為 x86-64 cdecl 參數是由右至左壓入，所以我們 List.rev 才能從最後一個參數先 push *)
+    in
+    let call_code = call fn.fn_name in
+    (* 呼叫完要把參數彈走 *)
+    let cleanup_code =
+      if List.length args > 0 then
+        addq (imm (8 * List.length args)) (!%rsp)
+      else
+        nop
+    in
+    (data_args, code_args ++ call_code ++ cleanup_code)  
   | TEbinop (op, left, right) ->
     let left_data, left_code = generate_expr left in
     let right_data, right_code = generate_expr right in
@@ -237,50 +256,45 @@ let rec generate_expr expr =
       | _ -> failwith "Unsupported operator"
     in
     (left_data ++ right_data, right_code ++ pushq (!%rax) ++ left_code ++ popq rbx ++ op_code)  
-  | TElist elements ->
+    | TElist elements ->
       let total_size = (List.length elements + 1) * 8 in
-      (* 为列表分配内存 *)
+      (* 為清單分配內存 *)
       let alloc_code =
         movq (imm total_size) (!%rdi) ++
         call "malloc@PLT" ++
-        movq (!%rax) (!%r12) (* 保存分配的内存地址到 r12 *)
+        movq (!%rax) (!%r12) (* 保存分配的內存地址到 r12 *)
       in
-      (* 初始化列表内容 *)
-      let init_code, data =
-        let rec store_elements idx acc_code acc_data = function
-          | [] -> (acc_code, acc_data)
-          | hd :: tl ->
-              let hd_data, hd_code = generate_expr hd in
-              let updated_code =
-                acc_code ++ hd_code ++
-                movq (!%rax) (ind ~ofs:(idx * 8) r12)
-              in
-              store_elements (idx + 1) updated_code (acc_data ++ hd_data) tl
-        in
-        store_elements 1 nop nop elements
+      (* 初始化清單內容 *)
+      let init_data, init_code =
+        List.fold_left (fun (acc_data, acc_code) (idx, elem) ->
+          let data_elem, code_elem = generate_expr elem in
+          (acc_data ++ data_elem,
+           acc_code ++ code_elem ++ movq (!%rax) (ind ~ofs:(8 * (idx + 1)) r12))
+        ) (nop, nop) (List.mapi (fun idx elem -> (idx, elem)) elements)
       in
+      (* 初始化清單長度 *)
       let size_code = movq (imm (List.length elements)) (ind r12) in
-      (data, alloc_code ++ size_code ++ init_code ++ movq (!%r12) (!%rax))
-  | TEget (lst, idx) ->
-    let lst_data, lst_code = generate_expr lst in
-    let idx_data, idx_code = generate_expr idx in
-    let get_code =
-      (* 計算索引的偏移量 *)
-      idx_code ++
-      movq (!%rax) (!%rdx) ++
-      imulq (imm 8) (!%rdx) ++
-      addq (imm 8) (!%rdx) ++ (* 加 8 跳過 list 長度 *)
-      
-      (* 取得列表的起始地址 *)
-      lst_code ++
-      movq (!%rax) (!%rsi) ++
-
-      (* 加載列表元素的值 *)
-      leaq (ind r12 ~index:rdx ~scale:1) (rsi) ++ 
-      addq (!%rdx) (!%rax) ++
-      movq (ind (rsi)) (!%rax)
-    in
-    (lst_data ++ idx_data, get_code)
+      (init_data, alloc_code ++ size_code ++ init_code ++ movq (!%r12) (!%rax))
+      | TEget (lst, idx) ->
+        let lst_data, lst_code = generate_expr lst in
+        let idx_data, idx_code = generate_expr idx in
+        let get_code =
+          (* 計算索引的偏移量 *)
+          idx_code ++
+          movq (!%rax) (!%rdx) ++
+          imulq (imm 8) (!%rdx) ++
+          addq (imm 8) (!%rdx) ++ (* 加 8 跳過 list 長度 *)
+          
+          (* 取得列表的起始地址 *)
+          lst_code ++
+          movq (!%rax) (!%rsi) ++
+    
+          (* 加載列表元素的值 *)
+          leaq (ind r12 ~index:rdx ~scale:1) (rsi) ++ 
+          addq (!%rdx) (!%rax) ++
+          movq (ind (rsi)) (!%rax)
+        in
+        (lst_data ++ idx_data, get_code)
   | _ -> failwith "Unsupported expression"
 
 (* 生成语句的汇编代码 *)
@@ -288,35 +302,45 @@ let rec generate_stmt stmt =
   match stmt with
   | TSprint expr ->
     let data_expr, code_expr = generate_expr expr in
-    let print_code =
+    let rec print_code expr depth =
       match expr with
       | TElist elements ->
-          let start_code = movq (ilab ".LCstart") (!%rdi) ++ call "printf" in
-          let print_element idx expr =
-            let elem_data, elem_code = generate_expr expr in
-            let separator =
-              if idx < List.length elements - 1 then
-                movq (ilab ".LCcomma") (!%rdi) ++ call "printf"
-              else nop
-            in
-            (elem_data, elem_code ++
-             movq (!%rax) (!%rsi) ++
-             movq (ilab ".LCd") (!%rdi) ++
-             call "printf" ++
-             separator)
-          in
-          let elements_data, elements_code =
-            List.mapi print_element elements
-            |> List.split
-          in
-          let finalize =
-            movq (ilab ".LCend") (!%rdi) ++
-            call "printf"  ++
-            movq (imm 10) (!%rdi) ++  (* 10 是 '\n' 的 ASCII 值 *)
-            call "putchar"
-          in
-          (List.fold_left (++) nop elements_data,
-           start_code ++ List.fold_left (++) nop elements_code ++ finalize)
+        let start_code = movq (ilab ".LCstart") (!%rdi) ++ call "printf" in
+        let finalize_code =
+          movq (ilab ".LCend") (!%rdi) ++ call "printf" ++
+          (if depth = 0 then movq (imm 10) (!%rdi) ++ call "putchar" else nop) in
+        let elements_code =
+          List.mapi (fun idx elem ->
+            match elem with
+            | TElist _ ->
+                let elem_data, elem_code = print_code elem (depth + 1) in
+                let comma =
+                  if idx < List.length elements - 1 then
+                    movq (ilab ".LCcomma") (!%rdi) ++ call "printf"
+                  else nop
+                in
+                (elem_data, elem_code ++ comma)
+            | _ ->
+                (* 普通元素處理 *)
+                let elem_data, elem_code = generate_expr elem in
+                let separator =
+                  if idx < List.length elements - 1 then
+                    movq (ilab ".LCcomma") (!%rdi) ++ call "printf"
+                  else nop
+                in
+                (elem_data, elem_code ++
+                 movq (!%rax) (!%rsi) ++
+                 movq (ilab ".LCd") (!%rdi) ++
+                 call "printf" ++
+                 separator)
+          ) elements
+          |> List.split
+        in
+        let data_code = List.fold_left (++) nop (fst elements_code) in
+        let code =
+          start_code ++ List.fold_left (++) nop (snd elements_code) ++ finalize_code
+        in
+        (data_code, code)
       | TEvar { v_type = Tnone; v_ofs } ->  (* 如果是變數，且變數類型為 list *)
           let load_code = movq (!%r15) (!%r12) in
           let start_code = movq (ilab ".LCstart") (!%rdi) ++ call "printf" in
@@ -389,7 +413,7 @@ let rec generate_stmt stmt =
           in
           (data_expr ++ format_data, print_code_2)
     in
-    (print_code)
+    (print_code expr 0)
   | TSassign (var, expr) ->
       let data, code = generate_expr expr in
       let assign_code = 
@@ -419,23 +443,28 @@ let rec generate_stmt stmt =
       label else_label ++
       else_code ++
       label end_label)
-(* | TSwhile (cond, body) ->
-    let start_label = fresh_unique_label () in
-    let end_label = fresh_unique_label () in
-    let cond_data, cond_code = generate_expr cond in
-    let body_data, body_code = generate_stmt body in
-    (cond_data ++ body_data,
-      label start_label ++
-      cond_code ++
-      cmpq (imm 0) (!%rax) ++
-      je end_label ++
-      body_code ++
-      jmp start_label ++
-      label end_label) *)
+  | TSdef (fn, body) ->
+    (* 不直接產生在此處，而是讓外層整合 *)
+    (* 但為了避免錯誤，先回傳 (nop, nop) *)
+    (nop, nop)
+  
+  | TSreturn expr ->
+      let d_expr, c_expr = generate_expr expr in
+      (d_expr, c_expr ++ leave ++ ret)
   | _ ->
     if !debug then Format.printf "Unsupported statement: %a@." print_tstmt stmt;
     failwith "Unsupported statement" 
 
+let generate_def (fn, body) =
+  let data_body, code_body = generate_stmt body in
+  label fn.fn_name ++
+  pushq (!%rbp) ++
+  movq (!%rsp) (!%rbp) ++
+  code_body ++
+  (* 若函式中沒有 TSreturn，則預設回傳 0 *)
+  movq (imm 0) (!%rax) ++
+  leave ++
+  ret
 (* 初始化字符串表 *)
 let initialize () =
   Hashtbl.add string_table ".LCtrue" "True";
@@ -453,54 +482,62 @@ let initialize () =
 (* 生成主函数代码 *)
 let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
   debug := b;
+  initialize ();
 
-  (* 保證初始化字符串表 *)
-  initialize ();  (* 在這裡調用 initialize 確保初始化執行 *)
+  (* tfile 的第一個元素通常是 (main_fn, TSblock [...]) *)
+  let (main_fn, main_stmt) = List.hd tfile in
+  let other_defs = List.tl tfile in
 
-  (* 從 tfile 中提取主體代碼 *)
-  let data, main_code =
-    let _, stmt = List.hd tfile in
-    generate_stmt stmt
+  (* 先生成 main 區塊 *)
+  let data_main, code_main = generate_stmt main_stmt in
+
+  (* 生成其他自訂函式 *)
+  let functions_code =
+    List.fold_left (fun acc (fn, body) ->
+      acc ++ generate_def (fn, body)
+    ) nop other_defs
   in
 
-  (* 確保 .LCtrue, .LCfalse, .LCs 等標籤被正確定義在數據段 *)
+  (* 你原本放在 data 的字串，這裡順便示範 *)
   let string_data =
-    label ".LCtrue" ++ string "True" ++
-    label ".LCfalse" ++ string "False" ++
-    label ".LCs" ++ string "%s" ++
-    label ".LCd" ++ string "%d" ++
-    label ".LCcomma" ++ string ", " ++
-    label ".LCstart" ++ string "[" ++
-    label ".LCend" ++ string "]" 
+    label ".LCtrue"   ++ string "True"   ++
+    label ".LCfalse"  ++ string "False"  ++
+    label ".LCs"      ++ string "%s"     ++
+    label ".LCd"      ++ string "%d"     ++
+    label ".LCcomma"  ++ string ", "     ++
+    label ".LCstart"  ++ string "["      ++
+    label ".LCend"    ++ string "]"
   in
+
+  (* 額外定義的 print_list 函式或其它 C extern, 視需求 *)
   let print_list =
     label "print_list" ++
     pushq (!%r12) ++
     pushq (!%r14) ++
     pushq (!%r15) ++
-    movq (ind r12) (!%r15) ++  (* 加載清單長度到 rcx *)
-    xorq (!%r14) (!%r14) ++    (* 初始化索引 rdx = 0 *)
+    movq (ind r12) (!%r15) ++
+    xorq (!%r14) (!%r14) ++
     label "print_list_loop" ++
-    cmpq (!%r14) (!%r15) ++    (* 檢查索引是否到達清單尾端 *)
+    cmpq (!%r14) (!%r15) ++
     je "print_list_end" ++
     movq (!%r14) (!%rdx) ++
-    (* 計算清單當前元素的地址 *)
-    imulq (imm 8) (!%rdx) ++        (* rdx = rdx * 8 *)
-    addq (imm 8) (!%rdx) ++         (* rdx = rdx + 8，跳過長度字段 *)
-    leaq (ind ~ofs:0 r12) (rsi) ++
-    addq (!%rdx) (!%rsi) ++         (* rsi = rsi + rdx (完整地址) *)
-    movq (ind rsi) (!%rax) ++       (* 加載當前元素的值 *)
-    movq (!%rax) (!%rsi) ++         (* 輸出值到 rsi *)
-    movq (ilab ".LCd") (!%rdi) ++ call "printf" ++
-    addq (imm 1) (!%r14) ++         (* rdx = rdx + 1 *)
-    cmpq (!%r14) (!%r15) ++    (* 檢查索引是否到達清單尾端 *)
+    imulq (imm 8) (!%rdx) ++
+    addq (imm 8) (!%rdx) ++
+    leaq (ind ~index:rdx ~scale:1 r12) rsi ++
+    movq (ind rsi) (!%rax) ++
+    movq (!%rax) (!%rsi) ++
+    movq (ilab ".LCd") (!%rdi) ++
+    call "printf" ++
+    addq (imm 1) (!%r14) ++
+    cmpq (!%r14) (!%r15) ++
     je "print_list_end" ++
-    movq (ilab ".LCcomma") (!%rdi) ++ call "printf" ++
+    movq (ilab ".LCcomma") (!%rdi) ++
+    call "printf" ++
     jmp "print_list_loop" ++
     label "print_list_end" ++
     movq (ilab ".LCend") (!%rdi) ++
-    call "printf"  ++
-    movq (imm 10) (!%rdi) ++  (* 10 是 '\n' 的 ASCII 值 *)
+    call "printf" ++
+    movq (imm 10) (!%rdi) ++
     call "putchar" ++
     movq (imm 0) (!%rax) ++
     popq (r15) ++
@@ -508,58 +545,18 @@ let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
     popq (r12) ++
     ret
   in
-  let compare_lists =
-    label "compare_lists" ++
-    pushq (!%rbp) ++
-    movq (!%rsp) (!%rbp) ++
-    movq (ind ~ofs:16 rbp) (!%rdi) ++
-    movq (ind ~ofs:24 rbp) (!%rsi) ++
-    movq (ind rdi) (!%rax) ++
-    movq (ind rsi) (!%rbx) ++
-    cmpq (!%rax) (!%rbx) ++
-    jl "list1_shorter" ++
-    jg "list2_shorter" ++
-    movq (imm 8) (!%rcx) ++
-    jmp "compare_loop" ++
-    label "list1_shorter" ++
-    movq (imm (-1)) (!%rax) ++
-    jmp "end_compare" ++
-    label "list2_shorter" ++
-    movq (imm 1) (!%rax) ++
-    jmp "end_compare" ++
-    label "compare_loop" ++
-    cmpq (!%rcx) (!%rax) ++
-    jge "end_compare" ++
-    movq (ind rdi ~index:rcx ~scale:8) (!%rdx) ++
-    movq (ind rsi ~index:rcx ~scale:8) (!%r8) ++
-    cmpq (!%rdx) (!%r8) ++
-    jl "list1_smaller" ++
-    jg "list2_smaller" ++
-    addq (imm 8) (!%rcx) ++
-    jmp "compare_loop" ++
-    label "list1_smaller" ++
-    movq (imm (-1)) (!%rax) ++
-    jmp "end_compare" ++
-    label "list2_smaller" ++
-    movq (imm 1) (!%rax) ++
-    jmp "end_compare" ++
-    label "end_compare" ++
-    leave ++
-    ret
-  in
 
-  (* 生成 main 函數的 text 部分 *)
   let text =
+    functions_code ++                (* 所有自訂函式 *)
     globl "main" ++
     label "main" ++
     pushq (!%rbp) ++
     movq (!%rsp) (!%rbp) ++
-    andq (imm (-16)) (!%rsp) ++
-    main_code ++
+    code_main ++
     movq (imm 0) (!%rax) ++
     leave ++
-    ret
+    ret ++
+    print_list
   in
 
-  (* 返回包含 data 和 text 的結果，並將 string_data 添加到 data 中 *)
-  { text = text ++ print_list ++ compare_lists; data = data ++ string_data }
+  { text; data = data_main ++ string_data }

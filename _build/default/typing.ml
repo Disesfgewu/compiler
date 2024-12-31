@@ -166,6 +166,21 @@ let rec check_stmt (s : stmt) : tstmt =
       let tbody = check_stmt body in
       (* 返回類型化的函數定義 *)
       TSdef ({ fn_name = id.id; fn_params }, tbody)
+  | Sdef (id, params, body) ->
+      if Hashtbl.mem function_table id.id then
+        error ~loc:id.loc "Function already defined: %s" id.id;
+      (* 建立函式參數 *)
+      let fn_params =
+        List.mapi (fun i param ->
+          let param_var = { v_name = param.id; v_ofs = 8 * (i + 2); v_type = Tint } in
+          Hashtbl.add symbol_table param.id param_var;
+          param_var
+        ) params
+      in
+      let tbody = check_stmt body in
+      let fn = { fn_name = id.id; fn_params } in
+      Hashtbl.add function_table id.id fn;
+      TSdef (fn, tbody)
   | Sreturn expr ->
       let texpr = check_expr expr in
       TSreturn texpr

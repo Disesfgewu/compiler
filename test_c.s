@@ -1,17 +1,5 @@
 	.file	"test.c"
 	.text
-	.section	.rodata
-.LC0:
-	.string	""
-.LC1:
-	.string	"a"
-.LC2:
-	.string	"\"%s\" < \"%s\": True\n"
-.LC3:
-	.string	"\"%s\" == \"%s\": False\n"
-.LC4:
-	.string	"\"%s\" > \"%s\": False\n"
-	.text
 	.globl	main
 	.type	main, @function
 main:
@@ -24,39 +12,20 @@ main:
 	movq	%rsp, %rbp
 	.cfi_def_cfa_register 6
 	subq	$32, %rsp
-	leaq	.LC0(%rip), %rax
-	movq	%rax, -16(%rbp)
-	leaq	.LC1(%rip), %rax
+	movq	%fs:40, %rax
 	movq	%rax, -8(%rbp)
-	movl	$-1, -20(%rbp)
-	cmpl	$0, -20(%rbp)
-	jns	.L2
-	movq	-8(%rbp), %rdx
-	movq	-16(%rbp), %rax
-	movq	%rax, %rsi
-	leaq	.LC2(%rip), %rdi
+	xorl	%eax, %eax
+	movl	$1, -32(%rbp)
+	movl	$2, -28(%rbp)
+	movl	$3, -24(%rbp)
+	movl	$4, -20(%rbp)
+	movl	$5, -16(%rbp)
 	movl	$0, %eax
-	call	printf@PLT
-	jmp	.L3
-.L2:
-	cmpl	$0, -20(%rbp)
-	jne	.L4
 	movq	-8(%rbp), %rdx
-	movq	-16(%rbp), %rax
-	movq	%rax, %rsi
-	leaq	.LC3(%rip), %rdi
-	movl	$0, %eax
-	call	printf@PLT
-	jmp	.L3
-.L4:
-	movq	-8(%rbp), %rdx
-	movq	-16(%rbp), %rax
-	movq	%rax, %rsi
-	leaq	.LC4(%rip), %rdi
-	movl	$0, %eax
-	call	printf@PLT
+	xorq	%fs:40, %rdx
+	je	.L3
+	call	__stack_chk_fail@PLT
 .L3:
-	movl	$0, %eax
 	leave
 	.cfi_def_cfa 7, 8
 	ret
