@@ -130,52 +130,6 @@ let rec generate_expr ?(is_for=false) expr =
           failwith "len() only supports string or integer types"
     in
     (arg_data, len_code)
-  | TEcall (fn, [TEcst (Cint end_val)]) when fn.fn_name = "range" ->
-    let range_size = Int64.to_int end_val + 1 in
-    let alloc_code =
-      movq (imm (range_size * 8)) (!%rdi) ++
-      call "malloc@PLT" ++
-      movq (!%rax) (!%r12) (* 保存分配的地址 *) 
-    in
-    let init_code =
-      movq (imm range_size) (ind r12) ++ (* 初始化範圍大小 *)
-      xorq (!%r13) (!%r13) ++ (* 計數器歸零 *)
-      label "range_init_loop" ++
-      cmpq (!%r13) (!%rdi) ++
-      je "range_init_end" ++
-      movq (!%r13) (!%rdx) ++
-      imulq (imm 8) (!%rdx) ++
-      addq (imm 8) (!%rdx) ++
-      movq (!%r13) (ind ~index:rdx ~scale:1 r12) ++
-      addq (imm 1) (!%r13) ++
-      jmp "range_init_loop" ++
-      label "range_init_end"
-    in
-      (nop, alloc_code ++ init_code ++ movq (!%r12) (!%rax))
-  
-  | TEcall (fn, [TEcst (Cint start_val); TEcst (Cint end_val)]) when fn.fn_name = "range" ->
-      let range_size = Int64.to_int (Int64.sub end_val start_val) + 1 in
-      let alloc_code =
-        movq (imm (range_size * 8)) (!%rdi) ++
-        call "malloc@PLT" ++
-        movq (!%rax) (!%r12) (* 保存分配的地址 *) 
-      in
-      let init_code =
-        movq (imm range_size) (ind r12) ++ (* 初始化範圍大小 *)
-        movq (imm (Int64.to_int start_val)) (!%r13) ++
-        label "range_init_loop" ++
-        cmpq (!%r13) (!%rdi) ++
-        je "range_init_end" ++
-        movq (!%r13) (!%rdx) ++
-        imulq (imm 8) (!%rdx) ++
-        addq (imm 8) (!%rdx) ++
-        movq (!%r13) (ind ~index:rdx ~scale:1 r12) ++
-        addq (imm 1) (!%r13) ++
-        jmp "range_init_loop" ++
-        label "range_init_end"
-      in
-      (nop, alloc_code ++ init_code ++ movq (!%r12) (!%rax))
-  
   | TEcall (fn, args) ->
     (* 收集 args 的 code，依序 push，最後 call fn.fn_name *)
     let (data_args, code_args) =
@@ -311,42 +265,20 @@ let rec generate_expr ?(is_for=false) expr =
   | TElist elements ->
     let total_size = (List.length elements + 1) * 8 in
     let alloc_code =
-      movq (imm total_size) (!%rdi) ++  (* 分配清單大小 *)
+      movq (imm total_size) (!%rdi) ++ (* 分配清單大小 *)
       call "malloc@PLT" ++
-      movq (!%rax) (!%r12)             (* 保存清單基址 *)
+      movq (!%rax) (!%r12) (* 保存清單基址 *)
     in
     let init_length = movq (imm (List.length elements)) (ind r12) in
     let init_elements =
       List.mapi (fun idx elem ->
-        match elem with
-        | TEcst (Cstring s) ->
-            let was_already_defined = Hashtbl.mem string_table s in
-            let label_name = 
-              if was_already_defined then
-                Hashtbl.find string_table s
-              else
-                let new_label = fresh_unique_label () in
-                Hashtbl.add string_table s new_label;
-                new_label
-            in
-            let data = 
-              if was_already_defined then
-                nop
-              else
-                label label_name ++ string s
-            in
-            let init_code =
-              movq (ilab label_name) (!%rax) ++
-              movq (!%rax) (ind ~ofs:(8 * (idx + 1)) r12)
-            in
-            (data, init_code)
-        | _ -> failwith "Only string elements are supported in this list"
+        let elem_data, elem_code = generate_expr elem in
+        elem_code ++
+        movq (!%rax) (ind ~ofs:(8 * (idx + 1)) r12) (* 初始化清單元素 *)
       ) elements
-      |> List.fold_left (fun (acc_data, acc_code) (data, code) ->
-        (acc_data ++ data, acc_code ++ code)
-      ) (nop, nop)
+      |> List.fold_left (++) nop
     in
-    (fst init_elements, alloc_code ++ init_length ++ snd init_elements ++ movq (!%r12) (!%rax))
+    (nop, alloc_code ++ init_length ++ init_elements ++ movq (!%r12) (!%rax))
   | TEget (lst, idx) ->
     let lst_data, lst_code = generate_expr lst in
     let idx_data, idx_code = generate_expr idx in
