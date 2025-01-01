@@ -119,33 +119,51 @@ let rec check_expr (e : expr) : texpr =
       let te2 = check_expr e2 in
       TEbinop (op, te1, te2)
   | Ecall (id, args) when id.id = "range" ->
-      if List.length args <> 1 then
-        error ~loc:id.loc "Function 'range' expects exactly 1 argument.";
-      let t_arg = check_expr (List.hd args) in
-      if not (is_int_type t_arg) then
-        error ~loc:id.loc "Function 'range' expects an integer argument.";
-      (match t_arg with
-      | TEcst (Cint n) ->
-          let elements = List.init (Int64.to_int n) (fun i -> TEcst (Cint (Int64.of_int i))) in
-          TElist elements
-      | _ -> error "Dynamic range generation not supported.")
-  | Ecall (id, args) when id.id = "list" ->
+    (match args with
+    | [end_expr] ->
+        (* 單參數 range *)
+        let t_end = check_expr end_expr in
+        if is_int_type t_end then
+          let t_start = TEcst (Cint (Int64.of_int 0)) in (* 將 0 明確轉為 int64 *)
+          TEcall ({ fn_name = "range"; fn_params = [] }, [t_start; t_end])
+        else
+          error ~loc:id.loc "Function 'range' expects an integer argument."
+    | [start_expr; end_expr] ->
+        (* 雙參數 range *)
+        let t_start = check_expr start_expr in
+        let t_end = check_expr end_expr in
+        if is_int_type t_start && is_int_type t_end then
+          TEcall ({ fn_name = "range"; fn_params = [] }, [t_start; t_end])
+        else
+          error ~loc:id.loc "Function 'range' expects integer arguments."
+    | _ -> error ~loc:id.loc "Function 'range' expects 1 or 2 arguments.")
+    | Ecall (id, args) when id.id = "list" ->
       if List.length args <> 1 then
         error ~loc:id.loc "Function 'list' expects exactly 1 argument.";
       let arg = List.hd args in
       (match arg with
       | Ecall (range_id, range_args) when range_id.id = "range" ->
-          if List.length range_args <> 1 then
-            error ~loc:range_id.loc "Function 'range' expects exactly 1 argument.";
-          let t_arg = check_expr (List.hd range_args) in
-          if not (is_int_type t_arg) then
-            error ~loc:range_id.loc "Function 'range' expects an integer argument.";
-          (match t_arg with
-          | TEcst (Cint n) ->
-              let elements = List.init (Int64.to_int n) (fun i -> TEcst (Cint (Int64.of_int i))) in
-              TElist elements
-          | _ -> error "Dynamic range generation not supported.")
-      | _ -> error ~loc:id.loc "Function 'list' expects a range as its argument.")
+          (* 處理 range 的引數 *)
+          let t_range =
+            match range_args with
+            | [end_expr] ->
+                let t_end = check_expr end_expr in
+                if is_int_type t_end then
+                  let t_start = TEcst (Cint (Int64.of_int 0)) in
+                  TEcall ({ fn_name = "range"; fn_params = [] }, [t_start; t_end])
+                else
+                  error ~loc:range_id.loc "Function 'range' expects int1eger arguments."
+            | [start_expr; end_expr] ->
+                let t_start = check_expr start_expr in
+                let t_end = check_expr end_expr in
+                if is_int_type t_start && is_int_type t_end then
+                  TEcall ({ fn_name = "range"; fn_params = [] }, [t_start; t_end])
+                else
+                  error ~loc:range_id.loc "Function 'range' expects integer arguments."
+            | _ -> error ~loc:range_id.loc "Function 'range' expects 1 or 2 arguments."
+          in
+      t_range
+    | _ -> error ~loc:id.loc "Function 'list' expects a range as its argument.")
   | Ecall (id, args) ->
     if not (Hashtbl.mem function_table id.id) then
       error ~loc:id.loc "Undefined function: %s" id.id;

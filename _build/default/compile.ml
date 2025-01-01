@@ -130,6 +130,31 @@ let rec generate_expr ?(is_for=false) expr =
           failwith "len() only supports string or integer types"
     in
     (arg_data, len_code)
+  | TEcall ({ fn_name = "range"; _ }, [start_expr; end_expr]) ->
+      let start_data, start_code = generate_expr start_expr in
+      let end_data, end_code = generate_expr end_expr in
+      let range_code =
+        start_code ++
+        movq (!%rax) (!%r12) ++ (* 保存 start 到 r12 *)
+        end_code ++
+        movq (!%rax) (!%r13) ++ (* 保存 end 到 r13 *)
+        subq (!%r12) (!%r13) ++ (* 計算範圍長度 *)
+        movq (!%r13) (!%rdi) ++
+        call "malloc" ++
+        movq (!%rax) (!%r14) ++ (* 保存範圍地址到 r14 *)
+        xorq (!%r15) (!%r15) ++ (* 初始化索引 r15 *)
+        label "range_loop" ++
+        cmpq (!%r15) (!%r13) ++
+        je "range_end" ++
+        movq (!%r15) (!%rdx) ++
+        imulq (imm 8) (!%rdx) ++
+        addq (imm 8) (!%rdx) ++
+        movq (!%r15) (ind ~index:rdx ~scale:1 r14) ++
+        addq (imm 1) (!%r15) ++
+        jmp "range_loop" ++
+        label "range_end"
+      in
+      (start_data ++ end_data, range_code)  
   | TEcall (fn, args) ->
     (* 收集 args 的 code，依序 push，最後 call fn.fn_name *)
     let (data_args, code_args) =
