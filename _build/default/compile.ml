@@ -257,7 +257,24 @@ let rec generate_expr ?(is_for=false) expr =
                 call "strcat"
               in
               (concat_code)
-          | _ -> addq (!%rbx) (!%rax) )
+          | TEcst( Cint _ ), TEcst( Cstring _ ) ->
+            let code = 
+                call "runtime_error" ++
+                movq (imm 0) (!%rax) ++
+                leave ++
+                ret 
+            in
+            (code)
+            | TEcst( Cstring _ ), TEcst( Cint _ ) ->
+              let code = 
+                  call "runtime_error" ++
+                  movq (imm 0) (!%rax) ++
+                  leave ++
+                  ret 
+              in
+              (code)
+          | _ ->
+            addq (!%rbx) (!%rax) )
       | Bsub -> subq (!%rbx) (!%rax)
       | Bmul -> imulq (!%rbx) (!%rax)
       | Bdiv -> cqto ++ idivq (!%rbx)
@@ -335,7 +352,40 @@ let rec generate_expr ?(is_for=false) expr =
                 label set_rax_to_1_label ++
                 movq (imm 1) (!%rax) ++
                 label end_label)
-      | Band -> andq (!%rbx) (!%rax)
+      | Band -> (
+        match left, right with
+        | _ -> (
+          let is_invalid_type expr =
+            match expr with
+            | TEcall (fn , _) -> false (* 函數調用需額外檢查 *)
+            | TEcst (Cbool _) -> true (* 布林值是合法類型 *)
+            | TEcst (Cint _) -> true  (* 整數在此處不合法 *)
+            | _ -> true (* 其他類型都不合法 *)
+          in
+          let left_invalid = is_invalid_type left in
+          let right_invalid = is_invalid_type right in
+          let code = 
+            call "runtime_error" ++
+            movq (imm 0) (!%rax) ++
+            leave ++
+            ret 
+          in
+          match left_invalid, right_invalid with
+            | false, false -> code 
+            | false, true -> (
+              match right with
+              | TEcst (Cbool false) -> andq (!%rbx) (!%rax)
+              | TEcst (Cbool true) -> code
+              | _ -> code
+              )
+            | true, false -> (
+              match left with
+              | TEcst (Cbool false) -> andq (!%rbx) (!%rax)
+              | TEcst (Cbool true) -> code
+              | _ -> code
+            )
+            | _ -> andq (!%rbx) (!%rax) )
+          )
       | Bor -> orq (!%rbx) (!%rax)
       | _ -> failwith "Unsupported operator"
     in
@@ -704,7 +754,15 @@ let generate_def (fn, body) =
 
   (* 返回整體的 .data 和 .text 段 *)
   (string_data ++ data_body, function_code)
-    
+
+let runtime_error =
+  label "runtime_error" ++
+  movq (ilab ".LCerror") (!%rdi) ++ (* 錯誤訊息的標籤 *)
+  call "puts" ++                   (* 輸出錯誤訊息 *)
+  movq (imm 1) (!%rdi) ++          (* 退出代碼 1 *)
+  call "exit" ++                   (* 終止程式 *)
+  ret
+  
     
 (* 初始化字符串表 *)
 let initialize () =
@@ -748,7 +806,18 @@ let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
     label ".LCstart"  ++ string "["      ++
     label ".LCend"    ++ string "]"      ++
     label ".LCs"      ++ string "%s"     ++
-    label ".LCd"      ++ string "%d"
+    label ".LCd"      ++ string "%d" ++
+    label ".LCerror" ++ string "Runtime Error"
+  in
+
+  
+  let runtime_error =
+    label "runtime_error" ++
+    movq (ilab ".LCerror") (!%rdi) ++ (* 錯誤訊息的標籤 *)
+    call "puts" ++                   (* 輸出錯誤訊息 *)
+    movq (imm 1) (!%rdi) ++          (* 退出代碼 1 *)
+    call "exit" ++                   (* 終止程式 *)
+    ret
   in
   let string_data2 =
     Hashtbl.fold (fun value label_name acc ->
@@ -803,7 +872,8 @@ let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
     movq (imm 0) (!%rax) ++
     leave ++
     ret ++
-    print_list
+    print_list ++
+    runtime_error
   in
 
   { text; data = string_data ++ string_data2}

@@ -3,7 +3,7 @@
 | badmatrix   | x  | x | 2D array  | |
 | compare_list1 | O   | x | compare fail in 1D array | |
 | compare_list2  | O | x | compare fail in 2D array  | |
-| concat2  | O | x | def+return with string  | |
+| concat2  | O | x | def+return with string  | O |
 | concat3 | x | x | def+return with list | |
 | eval1 | x | x | for loop | O |
 | fact | x | x | for loop + list + range + def | |
