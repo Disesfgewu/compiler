@@ -9,7 +9,7 @@
 | fact | x | x | for loop + list + range + def | |
 | fib | o | x | def | O |
 | list2 | o | x | 2D array | |
-| loop2 | o | x | def | O |
+| loop1 | o | x | def | O |
 | mandelbrot | x | x | for loop + list + range + def | |
 | none | o | x | def + no return + compare with none | |
 | pascal | x | x | for loop + list + range + def | |

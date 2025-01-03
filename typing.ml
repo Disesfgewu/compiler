@@ -24,10 +24,12 @@ let is_bool_type (texpr : texpr) : bool =
   | _ -> false
 
 (* 檢查是否為整數類型 *)
-let is_int_type (texpr : texpr) : bool =
+let rec is_int_type (texpr : texpr) : bool =
   match texpr with
   | TEcst (Cint _) -> true
   | TEvar var when var.v_type = Tint -> true
+  | TEbinop (_, left, right) -> is_int_type left && is_int_type right
+  | TEunop (Uneg, expr) -> is_int_type expr
   | _ -> false
 
 let is_list_type (texpr : texpr) : bool =
@@ -144,6 +146,9 @@ let rec check_expr (e : expr) : texpr =
           | TEcst (Cint n) ->
               let elements = List.init (Int64.to_int n) (fun i -> TEcst (Cint (Int64.of_int i))) in
               TElist elements
+          | TEvar var when var.v_type = Tint ->
+                (* 如果是整數變數，保留為動態處理 *)
+              TEcall ({ fn_name = "range"; fn_params = [] }, [t_arg])
           | _ -> error "Dynamic range generation not supported.")
       | _ -> error ~loc:id.loc "Function 'list' expects a range as its argument.")
   | Ecall (id, args) ->
@@ -170,7 +175,18 @@ let rec check_stmt (s : stmt) : tstmt =
         | TEcst (Cint _) -> Tint
         | TEcst (Cbool _) -> Tbool
         | TEcst (Cstring _) -> Tstring
-        | TElist _ -> Tnone 
+        | TElist _ -> Tnone
+        | TEbinop (_, left, right) -> 
+          if is_int_type left && is_int_type right then Tint
+          else error ~loc:id.loc "Binary operation expects integer operands."
+        | TEcall (fn, _) ->
+          (* 根據函數返回值的預定義類型來設置變量類型 *)
+          if Hashtbl.mem function_table fn.fn_name then
+            let fn_info = Hashtbl.find function_table fn.fn_name in
+            (* 假設所有函數返回整數類型，根據實際需求修改 *)
+            Tint
+          else error ~loc:id.loc "Function call type cannot be determined."
+        | TEvar var -> var.v_type  (* 使用變量類型 *) 
         | _ -> Tnone
       in
       (* 檢查變量是否已存在符號表中 *)

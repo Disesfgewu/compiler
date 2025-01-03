@@ -1,34 +1,92 @@
 	.text
+make:
+	pushq %rbp
+	movq %rsp, %rbp
+	movq $0, %rax
+	pushq %rax
+	movq 16(%rbp), %rax
+	popq %rbx
+	cmpq %rbx, %rax
+	je .LC0
+	movq $0, %rax
+	jmp .LC1
+.LC0:
+	movq $1, %rax
+.LC1:
+	cmpq $0, %rax
+	je .LC4
+	movq $.LC2, %rdi
+	movq %rdi, %rax
+	leave
+	ret
+	jmp .LC5
+.LC4:
+	movq $1, %rax
+	pushq %rax
+	movq 16(%rbp), %rax
+	popq %rbx
+	subq %rbx, %rax
+	pushq %rax
+	call make
+	addq $8, %rsp
+	pushq %rax
+	movq $.LC3, %rdi
+	movq %rdi, %rax
+	popq %rbx
+	movq $.LC3, %rdi
+	movq %rdi, %rax
+	call strlen
+	movq %rax, %r10
+	movq $1, %rax
+	pushq %rax
+	movq 16(%rbp), %rax
+	popq %rbx
+	subq %rbx, %rax
+	pushq %rax
+	call make
+	addq $8, %rsp
+	call strlen
+	addq %r10, %rax
+	addq $1, %rax
+	movq %rax, %rdi
+	call malloc
+	movq %rax, %r12
+	movq $.LC3, %rdi
+	movq %rdi, %rax
+	movq %rax, %rsi
+	movq %r12, %rdi
+	call strcpy
+	movq $1, %rax
+	pushq %rax
+	movq 16(%rbp), %rax
+	popq %rbx
+	subq %rbx, %rax
+	pushq %rax
+	call make
+	addq $8, %rsp
+	movq %rax, %rsi
+	movq %r12, %rdi
+	call strcat
+	leave
+	ret
+.LC5:
+	movq $0, %rax
+	leave
+	ret
 	.globl	main
 main:
 	pushq %rbp
 	movq %rsp, %rbp
-	movq $8, %rdi
-	call malloc@PLT
-	movq %rax, %r12
-	movq $0, 0(%r12)
-	movq %r12, %rax
-	movq %rax, %r15
-	movq %r15, %r12
-	movq $.LCstart, %rdi
-	call printf
-	call print_list
-	movq $32, %rdi
-	call malloc@PLT
-	movq %rax, %r12
-	movq $3, 0(%r12)
-	movq $1, %rax
-	movq %rax, 8(%r12)
 	movq $2, %rax
-	movq %rax, 16(%r12)
-	movq $3, %rax
-	movq %rax, 24(%r12)
-	movq %r12, %rax
-	movq %rax, %r15
-	movq %r15, %r12
-	movq $.LCstart, %rdi
+	pushq %rax
+	call make
+	addq $8, %rsp
+	movq %rax, %rsi
+	movq $.LCs, %rdi
+	movq $0, %rax
 	call printf
-	call print_list
+	movq $10, %rdi
+	call putchar
 	movq $0, %rax
 	leave
 	ret
@@ -70,13 +128,17 @@ print_list_end:
 	.string "True"
 .LCfalse:
 	.string "False"
-.LCs:
-	.string "%s"
-.LCd:
-	.string "%d"
 .LCcomma:
 	.string ", "
 .LCstart:
 	.string "["
 .LCend:
 	.string "]"
+.LCs:
+	.string "%s"
+.LCd:
+	.string "%d"
+.LC3:
+	.string "a"
+.LC2:
+	.string "l"
