@@ -232,9 +232,13 @@ let rec generate_expr ?(is_for=false) expr =
           
               let concat_code =
                 string_code ++
+                pushq (!%rbx) ++
                 call "strlen" ++
                 movq (!%rax) (!%r10) ++ (* 保存第一個字符串長度 *)
-                function_code ++
+                popq (rbx) ++
+                movq (!%rbx) (!%rax) ++
+                pushq (!%rbx) ++
+                (* function_code ++ *)
                 call "strlen" ++
                 addq (!%r10) (!%rax) ++ (* 加上第二個字符串長度 *)
                 addq (imm 1) (!%rax) ++ (* 加終止符空間 *)
@@ -245,7 +249,9 @@ let rec generate_expr ?(is_for=false) expr =
                 movq (!%rax) (!%rsi) ++
                 movq (!%r12) (!%rdi) ++
                 call "strcpy" ++
-                function_code ++
+                (* function_code ++ *)
+                popq (rbx) ++
+                movq (!%rbx) (!%rax) ++
                 movq (!%rax) (!%rsi) ++
                 movq (!%r12) (!%rdi) ++
                 call "strcat"

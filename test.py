@@ -1,7 +1,7 @@
 def make( n ):
     if n == 0 :
-        return "l"
+        return ""
     else:
-        return "a" + make( n-1 )
-    
-print( make(2))
+        return "a" + make( n - 1 )
+
+print( make(3) )

@@ -35,16 +35,12 @@ make:
 	popq %rbx
 	movq $.LC3, %rdi
 	movq %rdi, %rax
+	pushq %rbx
 	call strlen
 	movq %rax, %r10
-	movq $1, %rax
-	pushq %rax
-	movq 16(%rbp), %rax
 	popq %rbx
-	subq %rbx, %rax
-	pushq %rax
-	call make
-	addq $8, %rsp
+	movq %rbx, %rax
+	pushq %rbx
 	call strlen
 	addq %r10, %rax
 	addq $1, %rax
@@ -56,14 +52,8 @@ make:
 	movq %rax, %rsi
 	movq %r12, %rdi
 	call strcpy
-	movq $1, %rax
-	pushq %rax
-	movq 16(%rbp), %rax
 	popq %rbx
-	subq %rbx, %rax
-	pushq %rax
-	call make
-	addq $8, %rsp
+	movq %rbx, %rax
 	movq %rax, %rsi
 	movq %r12, %rdi
 	call strcat
@@ -77,7 +67,7 @@ make:
 main:
 	pushq %rbp
 	movq %rsp, %rbp
-	movq $2, %rax
+	movq $3, %rax
 	pushq %rax
 	call make
 	addq $8, %rsp
@@ -138,7 +128,7 @@ print_list_end:
 	.string "%s"
 .LCd:
 	.string "%d"
+.LC2:
+	.string ""
 .LC3:
 	.string "a"
-.LC2:
-	.string "l"

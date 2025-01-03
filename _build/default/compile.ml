@@ -190,67 +190,73 @@ let rec generate_expr ?(is_for=false) expr =
       match op with
       | Badd ->
         (match left, right with
-            | TEcst (Cstring s1), TEcst (Cstring s2) ->
-              let left_data, left_code = generate_expr left in
-              let right_data, right_code = generate_expr right in
+          | TEcst (Cstring s1), TEcst (Cstring s2) ->
+            let left_data, left_code = generate_expr left in
+            let right_data, right_code = generate_expr right in
+            let concat_code =
+              left_code ++
+              call "strlen" ++
+              movq (!%rax) (!%r10) ++ (* 保存第一個字符串長度 *)
+              right_code ++
+              call "strlen" ++
+              addq (!%r10) (!%rax) ++ (* 加上第二個字符串長度 *)
+              addq (imm 1) (!%rax) ++ (* 加終止符空間 *)
+              movq (!%rax) (!%rdi) ++
+              call "malloc" ++
+              movq (!%rax) (!%r12) ++ (* 保存結果地址 *)
+              left_code ++
+              movq (!%rax) (!%rsi) ++
+              movq (!%r12) (!%rdi) ++
+              call "strcpy" ++
+              right_code ++
+              movq (!%rax) (!%rsi) ++
+              movq (!%r12) (!%rdi) ++
+              call "strcat"
+            in
+          (concat_code)
+          | TEcst (Cstring _), TEcall (fn, args)
+          | TEcall (fn, args), TEcst (Cstring _) ->
+              (* 分別生成字符串和函數的代碼 *)
+              let (string_code, function_code) =
+                match left, right with
+                | TEcst (Cstring _), TEcall (fn, args) ->
+                    let _, string_code = generate_expr left in
+                    let _, function_code = generate_expr (TEcall (fn, args)) in
+                    (string_code, function_code)
+                | TEcall (fn, args), TEcst (Cstring _) ->
+                    let _, function_code = generate_expr (TEcall (fn, args)) in
+                    let _, string_code = generate_expr right in
+                    (string_code, function_code)
+                | _ -> failwith "Unexpected case for TEcst and TEcall"
+              in
+          
               let concat_code =
-                left_code ++
+                string_code ++
+                pushq (!%rbx) ++
                 call "strlen" ++
                 movq (!%rax) (!%r10) ++ (* 保存第一個字符串長度 *)
-                right_code ++
+                popq (rbx) ++
+                movq (!%rbx) (!%rax) ++
+                pushq (!%rbx) ++
+                (* function_code ++ *)
                 call "strlen" ++
                 addq (!%r10) (!%rax) ++ (* 加上第二個字符串長度 *)
                 addq (imm 1) (!%rax) ++ (* 加終止符空間 *)
                 movq (!%rax) (!%rdi) ++
                 call "malloc" ++
                 movq (!%rax) (!%r12) ++ (* 保存結果地址 *)
-                left_code ++
+                string_code ++
                 movq (!%rax) (!%rsi) ++
                 movq (!%r12) (!%rdi) ++
                 call "strcpy" ++
-                right_code ++
+                (* function_code ++ *)
+                popq (rbx) ++
+                movq (!%rbx) (!%rax) ++
                 movq (!%rax) (!%rsi) ++
                 movq (!%r12) (!%rdi) ++
                 call "strcat"
               in
-            (concat_code)
-            | TEcst (Cstring _), TEcall (fn, args)
-            | TEcall (fn, args), TEcst (Cstring _) ->
-                (* 分別生成字符串和函數的代碼 *)
-                let (string_code, function_code) =
-                  match left, right with
-                  | TEcst (Cstring _), TEcall (fn, args) ->
-                      let _, string_code = generate_expr left in
-                      let _, function_code = generate_expr (TEcall (fn, args)) in
-                      (string_code, function_code)
-                  | TEcall (fn, args), TEcst (Cstring _) ->
-                      let _, function_code = generate_expr (TEcall (fn, args)) in
-                      let _, string_code = generate_expr right in
-                      (string_code, function_code)
-                  | _ -> failwith "Unexpected case for TEcst and TEcall"
-                in
-            
-                let concat_code =
-                  string_code ++
-                  call "strlen" ++
-                  movq (!%rax) (!%r10) ++ (* 保存第一個字符串長度 *)
-                  function_code ++
-                  call "strlen" ++
-                  addq (!%r10) (!%rax) ++ (* 加上第二個字符串長度 *)
-                  addq (imm 1) (!%rax) ++ (* 加終止符空間 *)
-                  movq (!%rax) (!%rdi) ++
-                  call "malloc" ++
-                  movq (!%rax) (!%r12) ++ (* 保存結果地址 *)
-                  string_code ++
-                  movq (!%rax) (!%rsi) ++
-                  movq (!%r12) (!%rdi) ++
-                  call "strcpy" ++
-                  function_code ++
-                  movq (!%rax) (!%rsi) ++
-                  movq (!%r12) (!%rdi) ++
-                  call "strcat"
-                in
-                (concat_code)
+              (concat_code)
           | _ -> addq (!%rbx) (!%rax) )
       | Bsub -> subq (!%rbx) (!%rax)
       | Bmul -> imulq (!%rbx) (!%rax)
