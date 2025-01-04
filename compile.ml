@@ -7,8 +7,10 @@ let debug = ref false
 let string_table : (string, string) Hashtbl.t = Hashtbl.create 64
 let function_table : (string, fn) Hashtbl.t = Hashtbl.create 16
 let function_return_type_table : (string, v_type) Hashtbl.t = Hashtbl.create 16
+let is_list_contain_string : (string, bool) Hashtbl.t = Hashtbl.create 16
 
 let label_counter = ref 0
+let current_var_name = ref None
 
 let debug_string_table () =
   Format.printf "Current string_table contents:@.";
@@ -391,6 +393,15 @@ let rec generate_expr ?(is_for=false) expr =
     in
     (left_data ++ right_data, right_code ++ pushq (!%rax) ++ left_code ++ popq rbx ++ op_code)  
   | TElist elements ->
+    let contains_string = List.exists (function
+      | TEcst (Cstring _) -> true
+      | _ -> false
+    ) elements in
+
+    (* 更新 is_list_contain_string 表格 *)
+    (match !current_var_name with
+     | Some name -> Hashtbl.add is_list_contain_string name contains_string
+     | None -> ());
     let total_size = (List.length elements + 1) * 8 in
     let alloc_code =
       movq (imm total_size) (!%rdi) ++ (* 分配清單大小 *)
