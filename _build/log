@@ -13,4 +13,87 @@
 #  ; build_dir = In_build_dir "default"
 #  ; instrument_with = []
 #  }
-$ /usr/bin/ocamlc.opt -config > /tmp/dune_ca0594_output
+$ /usr/bin/ocamlc.opt -config > /tmp/dune_fd99ca_output
+$ (cd _build/default && /usr/bin/ocamldep.opt -modules -impl compile.ml) > _build/default/.minipython.eobjs/compile.impl.d
+$ (cd _build/default && /usr/bin/ocamlc.opt -g -bin-annot -I .minipython.eobjs/byte -no-alias-deps -opaque -o .minipython.eobjs/byte/compile.cmo -c -impl compile.ml)
+> File "compile.ml", line 539, characters 8-9:
+> 539 |       | _ -> failwith "Unsupported operator"
+>               ^
+> Warning 11: this match case is unused.
+> File "compile.ml", line 626, characters 4-5:
+> 626 |   | _ -> failwith "Unsupported expression"
+>           ^
+> Warning 11: this match case is unused.
+> File "compile.ml", line 142, characters 2-18323:
+> 142 | ..match expr with
+> 143 |   | TEcst (Cint value) ->
+> 144 |       let code = movq (imm (Int64.to_int value)) (!%rax) in
+> 145 |       (nop, code)
+> 146 |   | TEcst (Cstring s) ->
+> ...
+> 623 |         movq (ind (rsi)) (!%rax)
+> 624 |       in
+> 625 |       (lst_data ++ idx_data, get_code)
+> 626 |   | _ -> failwith "Unsupported expression"
+> Warning 8: this pattern-matching is not exhaustive.
+> Here is an example of a case that is not matched:
+> (TEcst Cnone|TErange _)
+> File "compile.ml", line 449, characters 14-19:
+> 449 |           let check expr =
+>                     ^^^^^
+> Warning 26: unused variable check.
+> File "compile.ml", line 498, characters 14-19:
+> 498 |           let check expr =
+>                     ^^^^^
+> Warning 26: unused variable check.
+> File "compile.ml", line 691, characters 23-78:
+> 691 |             | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> true
+>                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> Warning 26: unused variable op.
+> File "compile.ml", line 744, characters 23-78:
+> 744 |             | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> movq (ilab format_label) (!%rdx)
+>                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> Warning 26: unused variable op.
+$ (cd _build/default && /usr/bin/ocamlc.opt -g -bin-annot -I .minipython.eobjs/byte -no-alias-deps -opaque -o .minipython.eobjs/byte/minipython.cmo -c -impl minipython.ml)
+$ (cd _build/default && /usr/bin/ocamlopt.opt -g -I .minipython.eobjs/byte -I .minipython.eobjs/native -intf-suffix .ml -no-alias-deps -opaque -o .minipython.eobjs/native/minipython.cmx -c -impl minipython.ml)
+$ (cd _build/default && /usr/bin/ocamlopt.opt -g -I .minipython.eobjs/byte -I .minipython.eobjs/native -intf-suffix .ml -no-alias-deps -opaque -o .minipython.eobjs/native/compile.cmx -c -impl compile.ml)
+> File "compile.ml", line 539, characters 8-9:
+> 539 |       | _ -> failwith "Unsupported operator"
+>               ^
+> Warning 11: this match case is unused.
+> File "compile.ml", line 626, characters 4-5:
+> 626 |   | _ -> failwith "Unsupported expression"
+>           ^
+> Warning 11: this match case is unused.
+> File "compile.ml", line 142, characters 2-18323:
+> 142 | ..match expr with
+> 143 |   | TEcst (Cint value) ->
+> 144 |       let code = movq (imm (Int64.to_int value)) (!%rax) in
+> 145 |       (nop, code)
+> 146 |   | TEcst (Cstring s) ->
+> ...
+> 623 |         movq (ind (rsi)) (!%rax)
+> 624 |       in
+> 625 |       (lst_data ++ idx_data, get_code)
+> 626 |   | _ -> failwith "Unsupported expression"
+> Warning 8: this pattern-matching is not exhaustive.
+> Here is an example of a case that is not matched:
+> (TEcst Cnone|TErange _)
+> File "compile.ml", line 449, characters 14-19:
+> 449 |           let check expr =
+>                     ^^^^^
+> Warning 26: unused variable check.
+> File "compile.ml", line 498, characters 14-19:
+> 498 |           let check expr =
+>                     ^^^^^
+> Warning 26: unused variable check.
+> File "compile.ml", line 691, characters 23-78:
+> 691 |             | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> true
+>                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> Warning 26: unused variable op.
+> File "compile.ml", line 744, characters 23-78:
+> 744 |             | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> movq (ilab format_label) (!%rdx)
+>                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> Warning 26: unused variable op.
+$ (cd _build/default && /usr/bin/ocamlopt.opt -g -o minipython.exe /usr/lib/ocaml/str.cmxa -I /usr/lib/ocaml .minipython.eobjs/native/ast.cmx .minipython.eobjs/native/x86_64.cmx .minipython.eobjs/native/compile.cmx .minipython.eobjs/native/parser.cmx .minipython.eobjs/native/lexer.cmx .minipython.eobjs/native/typing.cmx .minipython.eobjs/native/minipython.cmx)
+# Promoting "_build/default/minipython.exe" to "minipython.exe"

@@ -140,8 +140,8 @@ let rec check_expr (e : expr) : texpr =
           if List.length range_args <> 1 then
             error ~loc:range_id.loc "Function 'range' expects exactly 1 argument.";
           let t_arg = check_expr (List.hd range_args) in
-          if not (is_int_type t_arg) then
-            error ~loc:range_id.loc "Function 'range' expects an integer argument.";
+          (* if not (is_int_type t_arg) then
+            error ~loc:range_id.loc "Function 'range' expects an integer argument."; *)
           (match t_arg with
           | TEcst (Cint n) ->
               let elements = List.init (Int64.to_int n) (fun i -> TEcst (Cint (Int64.of_int i))) in
@@ -149,6 +149,8 @@ let rec check_expr (e : expr) : texpr =
           | TEvar var when var.v_type = Tint ->
                 (* 如果是整數變數，保留為動態處理 *)
               TEcall ({ fn_name = "range"; fn_params = [] }, [t_arg])
+          | TElist (_) ->
+            TEcall ({ fn_name = "range_fail"; fn_params = [] }, [t_arg])
           | _ -> error "Dynamic range generation not supported.")
       | _ -> error ~loc:id.loc "Function 'list' expects a range as its argument.")
   | Ecall (id, args) ->
@@ -185,7 +187,8 @@ let rec check_stmt (s : stmt) : tstmt =
             let fn_info = Hashtbl.find function_table fn.fn_name in
             (* 假設所有函數返回整數類型，根據實際需求修改 *)
             Tint
-          else error ~loc:id.loc "Function call type cannot be determined."
+          else 
+            Tnone
         | TEvar var -> var.v_type  (* 使用變量類型 *) 
         | _ -> Tnone
       in

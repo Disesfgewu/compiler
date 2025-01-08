@@ -11,6 +11,7 @@ let is_list_contain_string : (string, bool) Hashtbl.t = Hashtbl.create 16
 
 let label_counter = ref 0
 let current_var_name = ref None
+let list_table : (string, int) Hashtbl.t = Hashtbl.create 64
 
 let debug_string_table () =
   Format.printf "Current string_table contents:@.";
@@ -198,6 +199,14 @@ let rec generate_expr ?(is_for=false) expr =
       let data, code = generate_expr expr in
       let op_code = negq (!%rax) in
       (data, code ++ op_code)
+  | TEcall (fn, [arg]) when fn.fn_name = "range_fail" ->
+    let code = 
+      call "runtime_error" ++
+      movq (imm 0) (!%rax) ++
+      leave ++
+      ret 
+    in
+    (nop, code)
   | TEcall (fn, [arg]) when fn.fn_name = "len" ->
     let arg_data, arg_code = generate_expr arg in
     let len_code =
@@ -557,25 +566,63 @@ let rec generate_expr ?(is_for=false) expr =
     in
     (nop, alloc_code ++ init_length ++ init_elements ++ movq (!%r12) (!%rax))
   | TEget (lst, idx) ->
-    let lst_data, lst_code = generate_expr lst in
-    let idx_data, idx_code = generate_expr idx in
-    let get_code =
-      (* 計算索引的偏移量 *)
-      idx_code ++
-      movq (!%rax) (!%rdx) ++
-      imulq (imm 8) (!%rdx) ++
-      addq (imm 8) (!%rdx) ++ (* 加 8 跳過 list 長度 *)
-      
-      (* 取得列表的起始地址 *)
-      lst_code ++
-      movq (!%rax) (!%rsi) ++
+    Format.printf "Debug: lst = %s, idx = %s\n"
+      (string_of_expr lst)
+      (string_of_expr idx);
+    match lst, idx with
+    | TEvar var, TEcst (Cint i) when var.v_type = Tnone -> (
+        match Hashtbl.find_opt list_table var.v_name with
+        | Some length ->
+            let index = Int64.to_int i in
+            if index < 0 || index >= length then
+              let error_code = 
+                call "runtime_error" ++
+                movq (imm 0) (!%rax) ++
+                leave ++
+                ret 
+              in
+              (nop, error_code)
+            else
+              let lst_data, lst_code = generate_expr lst in
+              let idx_data, idx_code = generate_expr idx in
+              let get_code =
+                (* 計算索引的偏移量 *)
+                idx_code ++
+                movq (!%rax) (!%rdx) ++
+                imulq (imm 8) (!%rdx) ++
+                addq (imm 8) (!%rdx) ++ (* 加 8 跳過 list 長度 *)
+                
+                (* 取得列表的起始地址 *)
+                lst_code ++
+                movq (!%rax) (!%rsi) ++
 
-      (* 加載列表元素的值 *)
-      leaq (ind r12 ~index:rdx ~scale:1) (rsi) ++ 
-      addq (!%rdx) (!%rax) ++
-      movq (ind (rsi)) (!%rax)
-    in
-    (lst_data ++ idx_data, get_code)
+                (* 加載列表元素的值 *)
+                leaq (ind r12 ~index:rdx ~scale:1) (rsi) ++ 
+                addq (!%rdx) (!%rax) ++
+                movq (ind (rsi)) (!%rax)
+              in
+              (lst_data ++ idx_data, get_code)
+        | None -> failwith (Printf.sprintf "Variable %s is not a list or not initialized." var.v_name))
+    | _ ->
+      let lst_data, lst_code = generate_expr lst in
+      let idx_data, idx_code = generate_expr idx in
+      let get_code =
+        (* 計算索引的偏移量 *)
+        idx_code ++
+        movq (!%rax) (!%rdx) ++
+        imulq (imm 8) (!%rdx) ++
+        addq (imm 8) (!%rdx) ++ (* 加 8 跳過 list 長度 *)
+        
+        (* 取得列表的起始地址 *)
+        lst_code ++
+        movq (!%rax) (!%rsi) ++
+
+        (* 加載列表元素的值 *)
+        leaq (ind r12 ~index:rdx ~scale:1) (rsi) ++ 
+        addq (!%rdx) (!%rax) ++
+        movq (ind (rsi)) (!%rax)
+      in
+      (lst_data ++ idx_data, get_code)
   | _ -> failwith "Unsupported expression"
 
 (* 生成语句的汇编代码 *)
@@ -630,6 +677,14 @@ let rec generate_stmt ?(is_for=false) stmt =
             call "print_list" 
           in          
           (nop, load_code ++ start_code ++ print_loop )
+      | TEcall (fn, args) when fn.fn_name = "len" ->
+        let error_code = 
+          call "runtime_error" ++
+          movq (imm 0) (!%rax) ++
+          leave ++
+          ret 
+        in
+        (nop, error_code)
       | _ ->  (* 其他情況，當作一般變數處理 *)
           let is_boolean_comparison =
             match expr with
@@ -706,6 +761,11 @@ let rec generate_stmt ?(is_for=false) stmt =
     (print_code expr 0)
   | TSassign (var, expr) ->
       let data, code = generate_expr expr in
+      (match expr with
+       TElist elements ->
+        (* 如果是列表，更新 `list_table` *)
+        Hashtbl.replace list_table var.v_name (List.length elements)
+      | _ -> ());
       let assign_code = 
         if var.v_type = Tnone then
           movq (!%rax) (!%r15) 

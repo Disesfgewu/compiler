@@ -3,10 +3,33 @@
 main:
 	pushq %rbp
 	movq %rsp, %rbp
-	call runtime_error
+	movq $32, %rdi
+	call malloc@PLT
+	movq %rax, %r12
+	movq $3, 0(%r12)
+	movq $111, %rax
+	movq %rax, 8(%r12)
+	movq $222, %rax
+	movq %rax, 16(%r12)
+	movq $333, %rax
+	movq %rax, 24(%r12)
+	movq %r12, %rax
+	movq %rax, %r15
+	movq $1, %rax
+	movq %rax, %rdx
+	imulq $8, %rdx
+	addq $8, %rdx
+	movq %r15, %r12
+	movq %rax, %rsi
+	leaq 0(%r12,%rdx,1), %rsi
+	addq %rdx, %rax
+	movq 0(%rsi), %rax
+	movq %rax, %rsi
+	movq $.LCd, %rdi
 	movq $0, %rax
-	leave
-	ret
+	call printf
+	movq $10, %rdi
+	call putchar
 	movq $0, %rax
 	leave
 	ret
