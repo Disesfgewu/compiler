@@ -107,15 +107,15 @@ let rec check_expr (e : expr) : texpr =
       if is_int_type te then TEunop (Uneg, te)
       else error "negation operation only supports integer expressions"
   | Ecall (id, args) when id.id = "len" ->
-      if List.length args <> 1 then
-        error ~loc:id.loc "Function 'len' expects exactly 1 argument.";
-      let t_arg = check_expr (List.hd args) in
-      (match t_arg with
-      | TElist elements ->
-          TEcst (Cint (Int64.of_int (List.length elements))) (* 返回清單長度 *)
-      | TEcst (Cint _) | TEcst (Cbool _) | TEcst (Cstring _) ->
-          TEcst (Cint (Int64.of_int 1))
-      | _ -> error ~loc:id.loc "Function 'len' expects a list as its argument.")
+    if List.length args <> 1 then
+      error ~loc:id.loc "Function 'len' expects exactly 1 argument.";
+    let t_arg = check_expr (List.hd args) in
+    (match t_arg with
+    | TElist elements ->
+      TEcst (Cint (Int64.of_int (List.length elements))) (* 返回清單長度 *)
+    | TEcst (Cint _) | TEcst (Cbool _) | TEcst (Cstring _) ->
+        TEcall ({ fn_name = "len"; fn_params = [] }, [t_arg])
+    | _ -> error ~loc:id.loc "Function 'len' expects a list or a valid argument.")
   | Ebinop (op, e1, e2) ->  (* 二元運算符 *)
       let te1 = check_expr e1 in
       let te2 = check_expr e2 in

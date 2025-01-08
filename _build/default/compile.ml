@@ -24,7 +24,51 @@ let fresh_unique_label () =
   let label = Printf.sprintf ".LC%d" !label_counter in
   incr label_counter;
   label
-
+  
+let rec string_of_expr expr =
+  match expr with
+  | TEcst (Cstring s) -> Printf.sprintf "TEcst(Cstring \"%s\")" s
+  | TEcst (Cint n) -> Printf.sprintf "TEcst(Cint %Ld)" n
+  | TEcst (Cbool b) -> Printf.sprintf "TEcst(Cbool %b)" b
+  | TEvar var -> Printf.sprintf "TEvar(name: %s, type: %s)" var.v_name 
+      (match var.v_type with
+        | Tstring -> "Tstring"
+        | Tint -> "Tint"
+        | Tbool -> "Tbool"
+        | Tnone -> "Tnone")
+  | TEcall (fn, args) ->
+      let args_str = String.concat ", " (List.map string_of_expr args) in
+      Printf.sprintf "TEcall(fn: %s, args: [%s])" fn.fn_name args_str
+  | TEbinop (op, left, right) ->
+      let op_str = match op with
+        | Badd -> "+"
+        | Bsub -> "-"
+        | Bmul -> "*"
+        | Bdiv -> "/"
+        | Bmod -> "%"
+        | Beq -> "=="
+        | Bneq -> "!="
+        | Blt -> "<"
+        | Ble -> "<="
+        | Bgt -> ">"
+        | Bge -> ">="
+        | Band -> "and"
+        | Bor -> "or"
+      in
+      Printf.sprintf "TEbinop(%s, %s, %s)" op_str (string_of_expr left) (string_of_expr right)
+  | TEunop (op, sub_expr) ->
+      let op_str = match op with
+        | Uneg -> "-"
+        | Unot -> "not"
+      in
+      Printf.sprintf "TEunop(%s, %s)" op_str (string_of_expr sub_expr)
+  | TElist elements ->
+      let elements_str = String.concat ", " (List.map string_of_expr elements) in
+      Printf.sprintf "TElist([%s])" elements_str
+  | TEget (lst, idx) ->
+      Printf.sprintf "TEget(lst: %s, idx: %s)" (string_of_expr lst) (string_of_expr idx)
+  | _ -> "Unknown expr"
+  
 (* 打印类型化表达式 *)
 let rec print_texpr fmt expr =
   match expr with
@@ -64,6 +108,34 @@ let rec print_tstmt fmt stmt =
       Format.fprintf fmt "TSblock([%a])" (Format.pp_print_list print_tstmt) stmts
   | _ -> Format.fprintf fmt "Unsupported tstmt"
 
+let rec evaluate_boolean_expr expr =
+  match expr with
+  | TEcst (Cbool b) -> Some b
+  | TEbinop (op, left, right) -> (
+      let eval_int expr =
+        match expr with
+        | TEcst (Cint n) -> Some (Int64.to_int n)
+        | _ -> None
+      in
+      let left_int = eval_int left in
+      let right_int = eval_int right in
+      match op, left_int, right_int with
+      | Blt, Some l, Some r -> Some (l < r)
+      | Ble, Some l, Some r -> Some (l <= r)
+      | Bgt, Some l, Some r -> Some (l > r)
+      | Bge, Some l, Some r -> Some (l >= r)
+      | Beq, Some l, Some r -> Some (l = r)
+      | Bneq, Some l, Some r -> Some (l <> r)
+      | _ -> None (* 無法靜態求值 *)
+    )
+  | TEunop (Unot, sub_expr) -> (
+      match evaluate_boolean_expr sub_expr with
+      | Some b -> Some (not b)
+      | None -> None
+    )
+  | _ -> None (* 其他類型無法靜態求值 *)
+  
+  
 (* 生成表达式的汇编代码 *)
 let rec generate_expr ?(is_for=false) expr =
   match expr with
@@ -362,10 +434,23 @@ let rec generate_expr ?(is_for=false) expr =
             | TEcall (fn , _) -> false (* 函數調用需額外檢查 *)
             | TEcst (Cbool _) -> true (* 布林值是合法類型 *)
             | TEcst (Cint _) -> true  (* 整數在此處不合法 *)
-            | _ -> true (* 其他類型都不合法 *)
+            | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq), left_sub, right_sub) -> true
+            | _ -> false (* 其他類型都不合法 *)
           in
+          let check expr =
+            match expr with
+            | TEcall (fn, args) ->
+                (* Format.printf "Detected TEcall: %s\n" fn.fn_name; *)
+                List.iter (fun arg -> Format.printf "Argument: %a\n" print_texpr arg) args;
+                (* 後續處理邏輯 *)
+                true
+            | _ ->        
+                (* Format.printf "Current expr: %s\n" (string_of_expr expr); *)
+                true
+            in
           let left_invalid = is_invalid_type left in
           let right_invalid = is_invalid_type right in
+          (* let c = check right in *)
           let code = 
             call "runtime_error" ++
             movq (imm 0) (!%rax) ++
@@ -375,17 +460,19 @@ let rec generate_expr ?(is_for=false) expr =
           match left_invalid, right_invalid with
             | false, false -> code 
             | false, true -> (
-              match right with
-              | TEcst (Cbool false) -> andq (!%rbx) (!%rax)
-              | TEcst (Cbool true) -> code
+              let right_result = evaluate_boolean_expr right in
+              match right_result with
+              | Some false -> andq (!%rbx) (!%rax)
+              | Some true -> code
               | _ -> code
               )
             | true, false -> (
-              match left with
-              | TEcst (Cbool false) -> andq (!%rbx) (!%rax)
-              | TEcst (Cbool true) -> code
+              let left_result = evaluate_boolean_expr left in
+              match left_result with
+              | Some false -> andq (!%rbx) (!%r12)
+              | Some true -> code
               | _ -> code
-            )
+              )
             | _ -> andq (!%rbx) (!%rax) )
           )
       | Bor -> orq (!%rbx) (!%rax)
@@ -444,6 +531,7 @@ let rec generate_expr ?(is_for=false) expr =
 let rec generate_stmt ?(is_for=false) stmt =
   match stmt with
   | TSprint expr ->
+    (* Format.printf "Current expr: %s\n" (string_of_expr expr); *)
     let data_expr, code_expr = generate_expr ~is_for:is_for expr in
     let rec print_code expr depth =
       match expr with
