@@ -3,13 +3,10 @@
 main:
 	pushq %rbp
 	movq %rsp, %rbp
-	movq $7, %rax
-	movq %rax, %rsi
-	movq $.LCd, %rdi
+	call runtime_error
 	movq $0, %rax
-	call printf
-	movq $10, %rdi
-	call putchar
+	leave
+	ret
 	movq $0, %rax
 	leave
 	ret

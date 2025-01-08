@@ -475,7 +475,58 @@ let rec generate_expr ?(is_for=false) expr =
               )
             | _ -> andq (!%rbx) (!%rax) )
           )
-      | Bor -> orq (!%rbx) (!%rax)
+      | Bor -> (
+        match left, right with
+        | _ -> (
+          let is_invalid_type expr =
+            match expr with
+            | TEcall (fn , _) -> false (* 函數調用需額外檢查 *)
+            | TEcst (Cbool _) -> true (* 布林值是合法類型 *)
+            | TEcst (Cint _) -> true  (* 整數在此處不合法 *)
+            | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq), left_sub, right_sub) -> true
+            | _ -> false (* 其他類型都不合法 *)
+          in
+          let check expr =
+            match expr with
+            | TEcall (fn, args) ->
+                (* Format.printf "Detected TEcall: %s\n" fn.fn_name; *)
+                List.iter (fun arg -> Format.printf "Argument: %a\n" print_texpr arg) args;
+                (* 後續處理邏輯 *)
+                true
+            | _ ->        
+                (* Format.printf "Current expr: %s\n" (string_of_expr expr); *)
+                true
+            in
+          let left_invalid = is_invalid_type left in
+          let right_invalid = is_invalid_type right in
+          (* let c = check right in *)
+          let code = 
+            call "runtime_error" ++
+            movq (imm 0) (!%rax) ++
+            leave ++
+            ret 
+          in
+          match left_invalid, right_invalid with
+            | false, false -> code 
+            | false, true -> (
+              let right_result = evaluate_boolean_expr right in
+              match right_result with
+              | Some true -> 
+                orq (!%rbx) (!%rax)
+              | Some false -> code
+              | _ -> code
+              )
+            | true, false -> (
+              let left_result = evaluate_boolean_expr left in
+              match left_result with
+              | Some true -> 
+                orq (!%rbx) (!%rax)
+              | Some false -> code
+              | _ -> code
+              )
+            | _ -> 
+              orq (!%rbx) (!%rax) )
+          )
       | _ -> failwith "Unsupported operator"
     in
     (left_data ++ right_data, right_code ++ pushq (!%rax) ++ left_code ++ popq rbx ++ op_code)  
@@ -693,69 +744,85 @@ let rec generate_stmt ?(is_for=false) stmt =
       let d_expr, c_expr = generate_expr expr in
       (d_expr, c_expr ++ leave ++ ret)
   | TSfor (var, iterable, body) ->
-    let iter_data, iter_code = generate_expr iterable in
-    let loop_start = fresh_unique_label () in
-    let loop_end = fresh_unique_label () in
-    let body_data, body_code = generate_stmt ~is_for:true body in
+      (* 檢查 iterable 是否為不合法的整數類型 *)
+      let is_invalid_iterable =
+        match iterable with
+        | TEcst (Cint _) -> true  (* 直接使用整數作為迭代對象是不合法的 *)
+        | _ -> false
+      in
+  
+      if is_invalid_iterable then
+        (* 若迭代器不合法，生成錯誤代碼 *)
+        let error_code = 
+          call "runtime_error" ++
+          movq (imm 0) (!%rax) ++
+          leave ++
+          ret 
+        in
+        (nop, error_code)
+      else
+        let iter_data, iter_code = generate_expr iterable in
+        let loop_start = fresh_unique_label () in
+        let loop_end = fresh_unique_label () in
+        let body_data, body_code = generate_stmt ~is_for:true body in
 
-    let copy_list_code =
-      movq (!%rax) (!%r12) ++
-      pushq (!%r12) ++
-      movq (ind r12) (!%r13) ++
-      imulq (imm 8) (!%r13) ++
-      addq (imm 8) (!%r13) ++
-      movq (!%r13) (!%rdi) ++
-      call "malloc@PLT" ++
-      movq (!%rax) (!%r14) ++
-      movq (ind r12) (!%rax) ++
-      movq (!%rax) (ind r14) ++
-      xorq (!%r15) (!%r15) ++
-      label "copy_list_loop" ++
-      cmpq (ind r12) (!%r15) ++
-      je "copy_list_end" ++
-      movq (!%r15) (!%rdx) ++
-      imulq (imm 8) (!%rdx) ++
-      addq (imm 8) (!%rdx) ++
-      movq (ind ~index:rdx ~scale:1 r12) (!%rax) ++
-      movq (!%rax) (ind ~index:rdx ~scale:1 r14) ++
-      addq (imm 1) (!%r15) ++
-      jmp "copy_list_loop" ++
-      label "copy_list_end" ++
-      popq (r12)
-    in
+        let copy_list_code =
+          movq (!%rax) (!%r12) ++
+          pushq (!%r12) ++
+          movq (ind r12) (!%r13) ++
+          imulq (imm 8) (!%r13) ++
+          addq (imm 8) (!%r13) ++
+          movq (!%r13) (!%rdi) ++
+          call "malloc@PLT" ++
+          movq (!%rax) (!%r14) ++
+          movq (ind r12) (!%rax) ++
+          movq (!%rax) (ind r14) ++
+          xorq (!%r15) (!%r15) ++
+          label "copy_list_loop" ++
+          cmpq (ind r12) (!%r15) ++
+          je "copy_list_end" ++
+          movq (!%r15) (!%rdx) ++
+          imulq (imm 8) (!%rdx) ++
+          addq (imm 8) (!%rdx) ++
+          movq (ind ~index:rdx ~scale:1 r12) (!%rax) ++
+          movq (!%rax) (ind ~index:rdx ~scale:1 r14) ++
+          addq (imm 1) (!%r15) ++
+          jmp "copy_list_loop" ++
+          label "copy_list_end" ++
+          popq (r12)
+        in
 
-    let loop_code =
-      iter_code ++
-      copy_list_code ++
-      xorq (!%r13) (!%r13) ++
-      label loop_start ++
-      cmpq (ind r14) (!%r13) ++
-      je loop_end ++
-      movq (!%r13) (!%rdx) ++
-      imulq (imm 8) (!%rdx) ++
-      addq (imm 8) (!%rdx) ++
-      movq (ind ~index:rdx ~scale:1 r14) (!%rax) ++
-      movq (!%rax) (ind ~ofs:var.v_ofs rbp) ++
-      movq (!%rax) (!%r9) ++
-      body_code ++
-      addq (imm 1) (!%r13) ++
-      jmp loop_start ++
-      label loop_end
-    in
-    let save_global_var =
-      movq (ind ~ofs:var.v_ofs rbp) (!%r10)  (* 保存全域變量值到 r10 *)
-    in
-    (* 在循環結束後，將最後一個值更新到全域變量 *)
-    let update_global_var =
-      movq (!%r13) (!%rdx) ++ (* 使用計數器值 r13 計算偏移量 *)
-      subq (imm 1) (!%rdx) ++ (* 計算最後一個元素索引 *)
-      imulq (imm 8) (!%rdx) ++
-      addq (imm 8) (!%rdx) ++
-      movq (ind ~index:rdx ~scale:1 r12) (!%rax) ++ (* 加載清單的最後一個元素到 rax *)
-      movq (!%rax) (ind ~ofs:var.v_ofs rbp)  (* 更新全域變量地址 *)
-    in
-
-    (iter_data ++ body_data, save_global_var ++ loop_code  ++ update_global_var)    
+        let loop_code =
+          iter_code ++
+          copy_list_code ++
+          xorq (!%r13) (!%r13) ++
+          label loop_start ++
+          cmpq (ind r14) (!%r13) ++
+          je loop_end ++
+          movq (!%r13) (!%rdx) ++
+          imulq (imm 8) (!%rdx) ++
+          addq (imm 8) (!%rdx) ++
+          movq (ind ~index:rdx ~scale:1 r14) (!%rax) ++
+          movq (!%rax) (ind ~ofs:var.v_ofs rbp) ++
+          movq (!%rax) (!%r9) ++
+          body_code ++
+          addq (imm 1) (!%r13) ++
+          jmp loop_start ++
+          label loop_end
+        in
+        let save_global_var =
+          movq (ind ~ofs:var.v_ofs rbp) (!%r10)  (* 保存全域變量值到 r10 *)
+        in
+        (* 在循環結束後，將最後一個值更新到全域變量 *)
+        let update_global_var =
+          movq (!%r13) (!%rdx) ++ (* 使用計數器值 r13 計算偏移量 *)
+          subq (imm 1) (!%rdx) ++ (* 計算最後一個元素索引 *)
+          imulq (imm 8) (!%rdx) ++
+          addq (imm 8) (!%rdx) ++
+          movq (ind ~index:rdx ~scale:1 r12) (!%rax) ++ (* 加載清單的最後一個元素到 rax *)
+          movq (!%rax) (ind ~ofs:var.v_ofs rbp)  (* 更新全域變量地址 *)
+        in
+        (iter_data ++ body_data, save_global_var ++ loop_code  ++ update_global_var)    
   | TSeval expr -> 
       (* 新增對 TSeval 的支援 *)
       let data_expr, code_expr = generate_expr expr in

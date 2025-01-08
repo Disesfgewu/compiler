@@ -13,35 +13,4 @@
 #  ; build_dir = In_build_dir "default"
 #  ; instrument_with = []
 #  }
-$ /usr/bin/ocamlc.opt -config > /tmp/dune_15114a_output
-$ (cd _build/default && /usr/bin/ocamldep.opt -modules -impl typing.ml) > _build/default/.minipython.eobjs/typing.impl.d
-$ (cd _build/default && /usr/bin/ocamlc.opt -g -bin-annot -I .minipython.eobjs/byte -no-alias-deps -opaque -o .minipython.eobjs/byte/typing.cmo -c -impl typing.ml)
-> File "typing.ml", line 160, characters 4-5:
-> 160 |   | _ ->
->           ^
-> Warning 11: this match case is unused.
-> File "typing.ml", line 275, characters 4-5:
-> 275 |   | _ -> error "Unsupported statement"
->           ^
-> Warning 11: this match case is unused.
-> File "typing.ml", line 185, characters 16-23:
-> 185 |             let fn_info = Hashtbl.find function_table fn.fn_name in
->                       ^^^^^^^
-> Warning 26: unused variable fn_info.
-$ (cd _build/default && /usr/bin/ocamlc.opt -g -bin-annot -I .minipython.eobjs/byte -no-alias-deps -opaque -o .minipython.eobjs/byte/minipython.cmo -c -impl minipython.ml)
-$ (cd _build/default && /usr/bin/ocamlopt.opt -g -I .minipython.eobjs/byte -I .minipython.eobjs/native -intf-suffix .ml -no-alias-deps -opaque -o .minipython.eobjs/native/typing.cmx -c -impl typing.ml)
-> File "typing.ml", line 160, characters 4-5:
-> 160 |   | _ ->
->           ^
-> Warning 11: this match case is unused.
-> File "typing.ml", line 275, characters 4-5:
-> 275 |   | _ -> error "Unsupported statement"
->           ^
-> Warning 11: this match case is unused.
-> File "typing.ml", line 185, characters 16-23:
-> 185 |             let fn_info = Hashtbl.find function_table fn.fn_name in
->                       ^^^^^^^
-> Warning 26: unused variable fn_info.
-$ (cd _build/default && /usr/bin/ocamlopt.opt -g -I .minipython.eobjs/byte -I .minipython.eobjs/native -intf-suffix .ml -no-alias-deps -opaque -o .minipython.eobjs/native/minipython.cmx -c -impl minipython.ml)
-$ (cd _build/default && /usr/bin/ocamlopt.opt -g -o minipython.exe /usr/lib/ocaml/str.cmxa -I /usr/lib/ocaml .minipython.eobjs/native/ast.cmx .minipython.eobjs/native/x86_64.cmx .minipython.eobjs/native/compile.cmx .minipython.eobjs/native/parser.cmx .minipython.eobjs/native/lexer.cmx .minipython.eobjs/native/typing.cmx .minipython.eobjs/native/minipython.cmx)
-# Promoting "_build/default/minipython.exe" to "minipython.exe"
+$ /usr/bin/ocamlc.opt -config > /tmp/dune_ca0594_output

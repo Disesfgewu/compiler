@@ -1,2 +1,2 @@
-print(len(list(range(7))))
-
+for x in 12:
+    print(x)

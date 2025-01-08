@@ -243,6 +243,8 @@ let rec check_stmt (s : stmt) : tstmt =
           Tint
       | TEvar var when var.v_type = Tnone ->
           Tint
+      | TEcst n ->
+          Tnone
       | _ -> error ~loc:id.loc "Unsupported iterable in for loop"
     in
 
