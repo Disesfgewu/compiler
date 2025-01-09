@@ -6,12 +6,12 @@
 | concat2  | O | x | def+return with string  | O |
 | concat3 | x | x | def+return with list | |
 | eval1 | x | x | for loop | O |
-| fact | x | x | for loop + list + range + def | |
+| fact | x | x | for loop + list + range + def | O |
 | fib | o | x | def | O |
 | list2 | o | x | 2D array | |
 | loop1 | o | x | def | O |
 | mandelbrot | x | x | for loop + list + range + def | |
-| none | o | x | def + no return + compare with none | |
+| none | o | x | def + no return + compare with none | O |
 | pascal | x | x | for loop + list + range + def | |
 | prime | x | x | for loop + list + range + def | |
 | print_list2 | x | x | list + range | O |
