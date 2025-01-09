@@ -60,6 +60,7 @@ type v_type =
   | Tbool
   | Tstring
   | Tnone
+  | None_vt
 
 type var = {
   v_name: string;

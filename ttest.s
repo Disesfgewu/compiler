@@ -1,63 +1,127 @@
 	.text
-make:
+fact:
 	pushq %rbp
 	movq %rsp, %rbp
-	movq $0, %rax
+	movq $1, %rax
 	pushq %rax
 	movq 16(%rbp), %rax
 	popq %rbx
 	cmpq %rbx, %rax
-	je .LC0
+	jle .LC0
 	movq $0, %rax
 	jmp .LC1
 .LC0:
 	movq $1, %rax
 .LC1:
 	cmpq $0, %rax
-	je .LC4
-	movq $.LC2, %rdi
-	movq %rdi, %rax
+	je .LC2
+	movq $1, %rax
 	leave
 	ret
-	jmp .LC5
-.LC4:
+	jmp .LC3
+.LC2:
+.LC3:
 	movq $1, %rax
 	pushq %rax
 	movq 16(%rbp), %rax
 	popq %rbx
 	subq %rbx, %rax
 	pushq %rax
-	call make
+	call fact
 	addq $8, %rsp
 	pushq %rax
-	movq $.LC3, %rdi
-	movq %rdi, %rax
-	movq $.LC3, %rdi
-	movq %rdi, %rax
-	call strlen
-	movq %rax, %r10
+	movq 16(%rbp), %rax
 	popq %rbx
-	movq %rbx, %rax
-	call strlen
-	pushq %rbx
-	addq %r10, %rax
-	addq $1, %rax
-	movq %rax, %rdi
-	call malloc
-	movq %rax, %r12
-	movq $.LC3, %rdi
-	movq %rdi, %rax
-	movq %rax, %rsi
-	movq %r12, %rdi
-	call strcpy
-	popq %rbx
-	movq %rbx, %rax
-	movq %rax, %rsi
-	movq %r12, %rdi
-	call strcat
+	imulq %rbx, %rax
 	leave
 	ret
+	movq $0, %rax
+	leave
+	ret
+factimp:
+	pushq %rbp
+	movq %rsp, %rbp
+	movq $1, %rax
+	pushq %rax
+	movq %rax, -16(%rbp)
+	movq -24(%rbp), %r10
+	movq 16(%rbp), %rax
+	movq %rax, %rdi
+	movq %rax, %rbx
+	imulq $8, %rdi
+	addq $8, %rdi
+	call malloc
+	movq %rax, %r14
+	movq %rbx, %rdi
+	movq %rbx, 0(%r14)
+	xorq %r15, %r15
+range_loop:
+	cmpq %r15, %rdi
+	je range_end
+	movq %r15, %rdx
+	imulq $8, %rdx
+	addq $8, %rdx
+	movq %r15, 0(%r14,%rdx,1)
+	addq $1, %r15
+	jmp range_loop
+range_end:
+	movq %rax, %r12
+	pushq %r12
+	movq 0(%r12), %r13
+	imulq $8, %r13
+	addq $8, %r13
+	movq %r13, %rdi
+	call malloc@PLT
+	movq %rax, %r14
+	movq 0(%r12), %rax
+	movq %rax, 0(%r14)
+	xorq %r15, %r15
+copy_list_loop:
+	cmpq 0(%r12), %r15
+	je copy_list_end
+	movq %r15, %rdx
+	imulq $8, %rdx
+	addq $8, %rdx
+	movq 0(%r12,%rdx,1), %rax
+	movq %rax, 0(%r14,%rdx,1)
+	addq $1, %r15
+	jmp copy_list_loop
+copy_list_end:
+	popq %r12
+	xorq %r13, %r13
+.LC4:
+	cmpq 0(%r14), %r13
+	je .LC5
+	movq %r13, %rdx
+	imulq $8, %rdx
+	addq $8, %rdx
+	movq 0(%r14,%rdx,1), %rax
+	movq %rax, -24(%rbp)
+	movq %rax, %r9
+	movq $1, %rax
+	pushq %rax
+	movq -24(%rbp), %rax
+	popq %rbx
+	addq %rbx, %rax
+	pushq %rax
+	movq -16(%rbp), %rax
+	popq %rbx
+	popq %rax
+	imulq %rbx, %rax
+	movq %rax, -16(%rbp)
+	pushq %rax
+	addq $1, %r13
+	jmp .LC4
 .LC5:
+	movq %r13, %rdx
+	subq $1, %rdx
+	imulq $8, %rdx
+	addq $8, %rdx
+	movq 0(%r12,%rdx,1), %rax
+	movq %rax, -24(%rbp)
+	movq -16(%rbp), %rax
+	leave
+	ret
 	movq $0, %rax
 	leave
 	ret
@@ -65,12 +129,12 @@ make:
 main:
 	pushq %rbp
 	movq %rsp, %rbp
-	movq $3, %rax
+	movq $10, %rax
 	pushq %rax
-	call make
+	call factimp
 	addq $8, %rsp
 	movq %rax, %rsi
-	movq $.LCs, %rdi
+	movq $.LCd, %rdi
 	movq $0, %rax
 	call printf
 	movq $10, %rdi
@@ -111,6 +175,12 @@ print_list_end:
 	popq %r14
 	popq %r12
 	ret
+runtime_error:
+	movq $.LCerror, %rdi
+	call puts
+	movq $1, %rdi
+	call exit
+	ret
 	.data
 .LCtrue:
 	.string "True"
@@ -126,7 +196,5 @@ print_list_end:
 	.string "%s"
 .LCd:
 	.string "%d"
-.LC3:
-	.string "a"
-.LC2:
-	.string "l"
+.LCerror:
+	.string "Runtime Error"

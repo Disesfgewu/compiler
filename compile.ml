@@ -138,7 +138,7 @@ let rec evaluate_boolean_expr expr =
   
   
 (* 生成表达式的汇编代码 *)
-let rec generate_expr ?(is_for=false) expr =
+let rec generate_expr ?(is_for=false) ?(is_fun=false) expr =
   match expr with
   | TEcst (Cint value) ->
       let code = movq (imm (Int64.to_int value)) (!%rax) in
@@ -223,21 +223,21 @@ let rec generate_expr ?(is_for=false) expr =
     in
     (arg_data, len_code)
   | TEcall ({ fn_name = "range"; _ }, [start_expr; end_expr]) ->
-      let start_data, start_code = generate_expr start_expr in
-      let end_data, end_code = generate_expr end_expr in
-      let range_code =
-        start_code ++
-        movq (!%rax) (!%r12) ++ (* 保存 start 到 r12 *)
-        end_code ++
-        movq (!%rax) (!%r13) ++ (* 保存 end 到 r13 *)
-        subq (!%r12) (!%r13) ++ (* 計算範圍長度 *)
-        movq (!%r13) (!%rdi) ++
-        call "malloc" ++
-        movq (!%rax) (!%r14) ++ (* 保存範圍地址到 r14 *)
-        xorq (!%r15) (!%r15) ++ (* 初始化索引 r15 *)
-        label "range_loop" ++
-        cmpq (!%r15) (!%r13) ++
-        je "range_end" ++
+    let start_data, start_code = generate_expr start_expr in
+    let end_data, end_code = generate_expr end_expr in
+    let range_code =
+      start_code ++
+      movq (!%rax) (!%r12) ++ (* 保存 start 到 r12 *)
+      end_code ++
+      movq (!%rax) (!%r13) ++ (* 保存 end 到 r13 *)
+      subq (!%r12) (!%r13) ++ (* 計算範圍長度 *)
+      movq (!%r13) (!%rdi) ++
+      call "malloc" ++
+      movq (!%rax) (!%r14) ++ (* 保存範圍地址到 r14 *)
+      xorq (!%r15) (!%r15) ++ (* 初始化索引 r15 *)
+      label "range_loop" ++
+      cmpq (!%r15) (!%r13) ++
+      je "range_end" ++
         movq (!%r15) (!%rdx) ++
         imulq (imm 8) (!%rdx) ++
         addq (imm 8) (!%rdx) ++
@@ -247,15 +247,70 @@ let rec generate_expr ?(is_for=false) expr =
         label "range_end"
       in
       (start_data ++ end_data, range_code)  
+  | TEcall ({ fn_name = "range"; _ }, [expr]) -> (
+    match expr with
+    | TEcst (Cint n) ->
+        (* 靜態處理：直接生成列表 *)
+        let elements = List.init (Int64.to_int n) (fun i -> TEcst (Cint (Int64.of_int i))) in
+        generate_expr (TElist elements)
+    | TEvar var when var.v_type = Tint -> (
+        (* 動態處理：從變量中加載 n 的值並生成範圍列表 *)
+        let load_code = movq (ind ~ofs:var.v_ofs rbp) (!%rax) in
+        let range_code =
+          load_code ++
+          movq (!%rax) (!%rdi) ++ (* 將 n 的值存入 rdi *)
+          movq (!%rax) (!%rbx) ++
+          imulq (imm 8) (!%rdi) ++
+          addq (imm 8) (!%rdi) ++
+          call "malloc" ++
+          movq (!%rax) (!%r14) ++
+          movq (!%rbx) (!%rdi) ++
+          movq (!%rbx) (ind r14) ++
+          xorq (!%r15) (!%r15) ++
+          label "range_loop" ++
+          cmpq (!%r15) (!%rdi) ++
+          je "range_end" ++
+          movq (!%r15) (!%rdx) ++
+          imulq (imm 8) (!%rdx) ++
+          addq (imm 8) (!%rdx) ++
+          movq (!%r15) (ind ~index:rdx ~scale:1 r14) ++
+          addq (imm 1) (!%r15) ++
+          jmp "range_loop" ++
+          label "range_end"
+        in
+        (nop, range_code)
+      )
+    | _ ->
+        (* 其他情況保留動態運行時處理 *)
+        let data, code = generate_expr expr in
+        let range_code =
+          code ++
+          movq (!%rax) (!%rdi) ++
+          call "malloc" ++
+          movq (!%rax) (!%r14) ++
+          xorq (!%r15) (!%r15) ++
+          label "range_loop" ++
+          cmpq (!%r15) (!%rdi) ++
+          je "range_end" ++
+            movq (!%r15) (!%rdx) ++
+            imulq (imm 8) (!%rdx) ++
+            addq (imm 8) (!%rdx) ++
+            movq (!%r15) (ind ~index:rdx ~scale:1 r14) ++
+            addq (imm 1) (!%r15) ++
+            jmp "range_loop" ++
+            label "range_end"
+        in
+        (data, range_code)
+  )    
   | TEcall (fn, args) ->
-    (* 收集 args 的 code，依序 push，最後 call fn.fn_name *)
+    (* 收集 args 的 code，依序 push，最後 call fn.fn_name *) 
     let (data_args, code_args) =
-      List.fold_left (fun (acc_data, acc_code) arg ->
-        let d, c = generate_expr arg in
-        (* 參數算好 -> 存在 %rax -> pushq %rax *)
-        (acc_data ++ d, acc_code ++ c ++ pushq (!%rax))
+    List.fold_left (fun (acc_data, acc_code) arg ->
+      let d, c = generate_expr arg in
+      (* 參數算好 -> 存在 %rax -> pushq %rax *)
+      (acc_data ++ d, acc_code ++ c ++ pushq (!%rax))
       ) (nop, nop) (List.rev args)
-      (* 因為 x86-64 cdecl 參數是由右至左壓入，所以我們 List.rev 才能從最後一個參數先 push *)
+  (* 因為 x86-64 cdecl 參數是由右至左壓入，所以我們 List.rev 才能從最後一個參數先 push *)
     in
     let call_code = call fn.fn_name in
     (* 呼叫完要把參數彈走 *)
@@ -538,7 +593,12 @@ let rec generate_expr ?(is_for=false) expr =
           )
       | _ -> failwith "Unsupported operator"
     in
-    (left_data ++ right_data, right_code ++ pushq (!%rax) ++ left_code ++ popq rbx ++ op_code)  
+    let func = 
+      match is_fun with
+      | true -> popq (rax)
+      | _ -> nop
+    in 
+    (left_data ++ right_data, right_code ++ pushq (!%rax) ++ left_code ++ popq rbx ++ func ++ op_code)  
   | TElist elements ->
     let contains_string = List.exists (function
       | TEcst (Cstring _) -> true
@@ -626,7 +686,7 @@ let rec generate_expr ?(is_for=false) expr =
   | _ -> failwith "Unsupported expression"
 
 (* 生成语句的汇编代码 *)
-let rec generate_stmt ?(is_for=false) stmt =
+let rec generate_stmt ?(is_for=false) ?(is_fun=false)stmt =
   match stmt with
   | TSprint expr ->
     (* Format.printf "Current expr: %s\n" (string_of_expr expr); *)
@@ -698,6 +758,7 @@ let rec generate_stmt ?(is_for=false) stmt =
             | TEcall (fn, _) -> (
                 match Hashtbl.find_opt function_return_type_table fn.fn_name with
                 | Some Tstring -> true
+                | Some None_vt -> true
                 | _ -> false
               )
             | TEcst (Cstring _) -> true
@@ -744,6 +805,12 @@ let rec generate_stmt ?(is_for=false) stmt =
             | TEbinop ((Blt | Ble | Bgt | Bge | Beq | Bneq | Band | Bor) as op, left, right) -> movq (ilab format_label) (!%rdx)
             | TEcst (Cbool _) -> movq (ilab format_label) (!%rdx)
             | TEunop (Unot, _) -> movq (ilab format_label) (!%rdx)
+            | TEcall (fn, _) ->
+              (
+                match Hashtbl.find_opt function_return_type_table fn.fn_name with
+                | Some None_vt -> movq (ilab ".LCnone") (!%rdi)
+                | _ -> movq (ilab format_label) (!%rdi)
+              )
             | _ -> movq (ilab format_label) (!%rdi)
           in
           let print_code_2 =
@@ -760,7 +827,7 @@ let rec generate_stmt ?(is_for=false) stmt =
     in
     (print_code expr 0)
   | TSassign (var, expr) ->
-      let data, code = generate_expr expr in
+      let data, code = generate_expr ~is_fun:is_fun expr in
       (match expr with
        TElist elements ->
         (* 如果是列表，更新 `list_table` *)
@@ -770,13 +837,14 @@ let rec generate_stmt ?(is_for=false) stmt =
         if var.v_type = Tnone then
           movq (!%rax) (!%r15) 
         else 
+          pushq (!%rax) ++ 
           movq (!%rax) (ind ~ofs:var.v_ofs rbp)
         in
       (data, code ++ assign_code)
   | TSblock stmts ->
     let datas, codes =
       stmts
-      |> List.map (fun stmt -> generate_stmt ~is_for:is_for stmt)
+      |> List.map (fun stmt -> generate_stmt ~is_for:is_for ~is_fun:is_fun stmt)
       |> List.split
     in
       let data = List.fold_left (++) nop datas in
@@ -824,7 +892,7 @@ let rec generate_stmt ?(is_for=false) stmt =
         let iter_data, iter_code = generate_expr iterable in
         let loop_start = fresh_unique_label () in
         let loop_end = fresh_unique_label () in
-        let body_data, body_code = generate_stmt ~is_for:true body in
+        let body_data, body_code = generate_stmt ~is_for:true ~is_fun:true body in
 
         let copy_list_code =
           movq (!%rax) (!%r12) ++
@@ -866,6 +934,7 @@ let rec generate_stmt ?(is_for=false) stmt =
           movq (!%rax) (ind ~ofs:var.v_ofs rbp) ++
           movq (!%rax) (!%r9) ++
           body_code ++
+          pushq (!%rax) ++
           addq (imm 1) (!%r13) ++
           jmp loop_start ++
           label loop_end
@@ -897,11 +966,14 @@ let rec extract_return_type stmt =
   | TSreturn expr -> Some (extract_expr_type expr)
   | TSblock stmts -> (
       (* 遍歷所有子語句，提取第一個有效的返回類型 *)
-      List.fold_left (fun acc sub_stmt ->
-        match acc with
-        | Some _ -> acc  (* 已經找到返回類型，直接返回 *)
-        | None -> extract_return_type sub_stmt
-      ) None stmts
+      let has_return, return_type = 
+        List.fold_left (fun (has_ret, acc) sub_stmt ->
+          match extract_return_type sub_stmt with
+          | Some t -> (true, Some t)  (* 找到返回值類型 *)
+          | None -> (has_ret, acc)    (* 保持已有的返回值類型 *)
+        ) (false, None) stmts
+      in
+      if has_return then return_type else None  (* 如果有 return，返回類型；否則返回 None_vt *)
     )
   | TSif (_, then_stmt, else_stmt) -> (
       match extract_return_type then_stmt, extract_return_type else_stmt with
@@ -909,7 +981,8 @@ let rec extract_return_type stmt =
       | Some t, None | None, Some t -> Some t    (* 只有一個分支有返回類型 *)
       | _ -> None                               (* 返回類型不一致或均無返回類型 *)
     )
-  | _ -> None  (* 其他情況無返回類型 *)
+  | TSfor (_, _, body) -> extract_return_type body  
+  | _ -> Some None_vt  (* 其他情況無返回類型 *)
 
 (* 提取表達式的類型 *)
 and extract_expr_type expr =
@@ -964,8 +1037,8 @@ let generate_def (fn, body) =
   let return_type = extract_return_type body in
   (match return_type with
   | Some t -> Hashtbl.add function_return_type_table fn.fn_name t
-  | None -> ());
-
+  | Some None_vt -> Hashtbl.add function_return_type_table fn.fn_name None_vt
+  | None -> () );
   (* 生成函數的代碼 *)
   let data_body, code_body = generate_stmt body in
   let function_code =
@@ -999,6 +1072,7 @@ let initialize () =
   Hashtbl.add string_table ".LCcomma" ", ";
   Hashtbl.add string_table ".LCstart" "[";
   Hashtbl.add string_table ".LCend" "]";
+  Hashtbl.add string_table ".LCnone" "None";
   Hashtbl.add function_table "len" {
     fn_name = "len";
     fn_params = [{ v_name = "arg"; v_ofs = 16; v_type = Tstring }];
@@ -1033,6 +1107,7 @@ let file ?debug:(b=false) (tfile: Ast.tfile) : X86_64.program =
     label ".LCend"    ++ string "]"      ++
     label ".LCs"      ++ string "%s"     ++
     label ".LCd"      ++ string "%d" ++
+    label ".LCnone"      ++ string "None" ++
     label ".LCerror" ++ string "Runtime Error"
   in
 
